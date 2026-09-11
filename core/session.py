@@ -7,6 +7,7 @@ from typing import Optional, Any
 import orjson
 from core.logger import logger
 from core.lib.config import settings
+from core.tabular import pack_tabular, unpack_tabular, is_tabular, tabular_response
 
 # Контекстные переменные для доступа к сессиям из любой точки кода
 current_transport_ctx: ContextVar = ContextVar("current_transport", default=None)
