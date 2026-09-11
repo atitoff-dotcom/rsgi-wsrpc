@@ -84,12 +84,15 @@ export class SmartCache {
         });
 
         // 2. Слушаем точечные патчи от сервера (cache.patch)
-        this.rpcClient.on('cache.patch', (payload: PatchPayload) => {
-            console.debug('[SmartCache] 🩹 Получен точечный патч cache.patch:', payload.tag, payload.action);
-            if (payload.version) {
-                this.tagVersions.set(payload.tag, payload.version);
+        this.rpcClient.on('cache.patch', (payload: any) => {
+            const tag = payload.tag || payload.key;
+            console.debug('[SmartCache] 🩹 Получен точечный патч cache.patch:', tag, payload.action);
+            if (payload.version && tag) {
+                this.tagVersions.set(tag, payload.version);
             }
-            this.applyPatch(payload.tag, payload.action, payload.data, payload.field);
+            if (tag) {
+                this.applyPatch(tag, payload.action, payload.data, payload.field);
+            }
         });
 
         // 3. Автоматическое рукопожатие при подключении / переподключении (Sync Handshake)

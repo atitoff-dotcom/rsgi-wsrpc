@@ -74,16 +74,23 @@ async def broadcast_cache_invalidate(
 ) -> int:
     """
     Оповещает клиентов о необходимости инвалидировать кэш по тегам.
-    Например: tags = ["forum.topics", "forum.category.2"]
+    Использует SmartCache: инкрементирует монотонные версии тегов, сохраняет в БД
+    и рассылает cache.invalidate с номерами новых версий.
     """
-    return await broadcast_notification(
-        method="cache.invalidate",
-        params={
-            "tags": tags,
-            "reason": reason,
-        },
-        exclude_current=exclude_current,
-    )
+    try:
+        from app.system.smart_cache.engine import invalidate_tags
+        versions = await invalidate_tags(tags, reason=reason, exclude_current=exclude_current)
+        return len(versions)
+    except Exception as e:
+        logger.warning(f"[Broadcast] Ошибка при инвалидации через SmartCache: {e}, фолбэк на прямое уведомление")
+        return await broadcast_notification(
+            method="cache.invalidate",
+            params={
+                "tags": tags,
+                "reason": reason,
+            },
+            exclude_current=exclude_current,
+        )
 
 
 async def broadcast_cache_patch(
@@ -94,14 +101,20 @@ async def broadcast_cache_patch(
 ) -> int:
     """
     Оповещает клиентов о точечном изменении данных сущности без перезагрузки всей страницы.
-    Например: key = "forum.topic.15", action = "append_reply", data = {...}
+    Использует SmartCache: инкрементирует версию тега и рассылает точечный патч клиентам.
     """
-    return await broadcast_notification(
-        method="cache.patch",
-        params={
-            "key": key,
-            "action": action,
-            "data": data,
-        },
-        exclude_current=exclude_current,
-    )
+    try:
+        from app.system.smart_cache.engine import patch_tag
+        return await patch_tag(tag=key, action=action, data=data, exclude_current=exclude_current)
+    except Exception as e:
+        logger.warning(f"[Broadcast] Ошибка при отправке патча через SmartCache: {e}, фолбэк на прямое уведомление")
+        return await broadcast_notification(
+            method="cache.patch",
+            params={
+                "key": key,
+                "tag": key,
+                "action": action,
+                "data": data,
+            },
+            exclude_current=exclude_current,
+        )

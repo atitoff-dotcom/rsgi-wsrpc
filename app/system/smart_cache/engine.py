@@ -85,7 +85,7 @@ class VersionRegistry:
         new_versions: Dict[str, int] = {}
         async with self._lock:
             for tag in tags:
-                current_ver = self._versions.get(tag, 0)
+                current_ver = self._versions.get(tag, 1)
                 new_ver = current_ver + 1
                 self._versions[tag] = new_ver
                 new_versions[tag] = new_ver
