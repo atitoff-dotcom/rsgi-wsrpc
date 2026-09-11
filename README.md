@@ -12,7 +12,7 @@
 3. [Comparison: rsgi-wsrpc vs Django vs FastAPI](#-comparison-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [Quickstart in 60 Seconds](#-quickstart-in-60-seconds)
 5. [Core Network Engine](#-core-network-engine)
-   * [Complete Core Developer Guide (core.md)](core.md)
+   * [Complete Core Developer Guide (docs/core.md)](docs/core.md)
 6. [Official System Plugins](#-official-system-plugins)
    * [Database Plugin (db)](#1-database-plugin-pluginsdb)
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
@@ -243,11 +243,11 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Core Network Engine
 
-> 📖 **For the complete technical manual with code examples, see: [docs/core.md](core.md)**.
+> 📖 **For the complete technical manual with code examples, see: [docs/core.md](docs/core.md)**.
 
 The network core resides in the `core/` directory and exposes the following building blocks:
 
-* **[core/session.py](../../core/session.py)**:
+* **[core/session.py](core/session.py)**:
   * `JsonRpcSession`: Manages persistent client sockets.
   * Multiplexes incoming and outgoing RPC requests by numeric `id`.
   * Built-in **Rate-Limiter (Token Bucket)** for protection against flooding (30 req/s) with zero runtime overhead.
@@ -255,25 +255,25 @@ The network core resides in the `core/` directory and exposes the following buil
   * Session termination hooks: `session.register_on_close(callback)` for clean resource teardown.
   * Symmetric client invocation from server: `await session.send_request("client_method", params)`.
 
-* **[core/router.py](../../core/router.py)**:
+* **[core/router.py](core/router.py)**:
   * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
   * High-throughput file streams, webhooks, and health checks.
 
-* **[core/upload.py](../../core/upload.py)**:
+* **[core/upload.py](core/upload.py)**:
   * `UploadCoordinator`: In-memory two-phase transaction coordinator.
   * Stream HTTP bytes directly to disk with constant **O(1) RAM** footprint (`stream_request_to_disk`).
   * On-the-fly SHA-256 calculation.
   * Automatic rollback (`await tx.rollback()`, partial file deletion) upon connection loss.
 
-* **[core/security.py](../../core/security.py)**:
+* **[core/security.py](core/security.py)**:
   * Password hashing using **Argon2id**.
   * JWT access token issuance and validation.
   * Asymmetric RSA encryption for secure credential exchange.
 
-* **[core/lifecycle.py](../../core/lifecycle.py)**:
+* **[core/lifecycle.py](core/lifecycle.py)**:
   * Application startup dispatcher `@on_startup` (runs migrations, cache warming, and background daemons before opening sockets).
 
-* **[core/lib/config.py](../../core/lib/config.py)**:
+* **[core/lib/config.py](core/lib/config.py)**:
   * Settings parser for `settings.yaml` supporting environment variable overrides.
 
 ---
@@ -310,7 +310,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 3. Two-Phase File Upload Plugin (`plugins/files`)
-* Comprehensive architecture: see **[docs/files.md](files.md)**.
+* Comprehensive architecture: see **[docs/files.md](docs/files.md)**.
 * **Two-Phase Commit Workflow**:
   1. Client initiates upload transaction: server provisions isolated `/tmp/agrita_uploads/<folder_hash>/`.
   2. Client streams files via `POST /upload`. Bytes stream directly to disk without memory buffering.
@@ -410,7 +410,7 @@ rpc.registerMethod('ui.confirm', async (params) => {
 });
 ```
 
-> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](core.md#8-typescriptjavascript-client-clientwsrpcts)**.
+> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](docs/core.md#8-typescriptjavascript-client-clientwsrpcts)**.
 
 ---
 

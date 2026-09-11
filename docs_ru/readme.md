@@ -247,7 +247,7 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 Сетевое ядро расположено в каталоге `core/` и содержит базовые примитивы:
 
-* **[core/session.py](../../core/session.py)**:
+* **[core/session.py](../core/session.py)**:
   * Класс `JsonRpcSession` — управление постоянным сокетом клиента.
   * Мультиплексирование входящих и исходящих RPC-вызовов по уникальному числовому `id`.
   * Встроенный **Rate-Limiting (Token Bucket)** для автоматической защиты от флуда (30 req/s) без накладных расходов.
@@ -255,25 +255,25 @@ await client.callStream('task.run_long', {}, (chunk) => {
   * Реестр колбэков завершения сессии: `session.register_on_close(callback)` для очистки фоновых задач и транзакций.
   * Симметричный вызов клиента с сервера: `await session.send_request("client_method", params)`.
 
-* **[core/router.py](../../core/router.py)**:
+* **[core/router.py](../core/router.py)**:
   * Декоратор `@http_route(path, methods)` для регистрации прямых HTTP-обработчиков поверх RSGI.
   * Прием сырых стримов байтов, вебхуков и healthcheck без лишнего оверхеда.
 
-* **[core/upload.py](../../core/upload.py)**:
+* **[core/upload.py](../core/upload.py)**:
   * Координатор двухфазной транзакционной загрузки `UploadCoordinator`.
   * Потоковый прием файлов из протокола RSGI с расходом оперативной памяти **O(1) RAM** (`stream_request_to_disk`).
   * Вычисление контрольной суммы SHA-256 на лету в процессе приема байтов.
   * Автоматический откат (`await tx.rollback()`, удаление временных файлов) при обрыве соединения.
 
-* **[core/security.py](../../core/security.py)**:
+* **[core/security.py](../core/security.py)**:
   * Надежное хэширование паролей на базе стойкого алгоритма **Argon2id**.
   * Генерация и валидация JWT access-токенов.
   * Асимметричное шифрование RSA для безопасной передачи чувствительных данных.
 
-* **[core/lifecycle.py](../../core/lifecycle.py)**:
+* **[core/lifecycle.py](../core/lifecycle.py)**:
   * Диспетчер инициализации приложения `@on_startup` (выполняет миграции БД, прогрев кэша и запуск фоновых задач до начала приема трафика).
 
-* **[core/lib/config.py](../../core/lib/config.py)**:
+* **[core/lib/config.py](../core/lib/config.py)**:
   * Парсер настроек `settings.yaml` со строгой валидацией и поддержкой переопределения через переменные окружения.
 
 ---

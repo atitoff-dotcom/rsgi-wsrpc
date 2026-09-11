@@ -247,7 +247,7 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 The network core resides in the `core/` directory and exposes the following building blocks:
 
-* **[core/session.py](../../core/session.py)**:
+* **[core/session.py](../core/session.py)**:
   * `JsonRpcSession`: Manages persistent client sockets.
   * Multiplexes incoming and outgoing RPC requests by numeric `id`.
   * Built-in **Rate-Limiter (Token Bucket)** for protection against flooding (30 req/s) with zero runtime overhead.
@@ -255,25 +255,25 @@ The network core resides in the `core/` directory and exposes the following buil
   * Session termination hooks: `session.register_on_close(callback)` for clean resource teardown.
   * Symmetric client invocation from server: `await session.send_request("client_method", params)`.
 
-* **[core/router.py](../../core/router.py)**:
+* **[core/router.py](../core/router.py)**:
   * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
   * High-throughput file streams, webhooks, and health checks.
 
-* **[core/upload.py](../../core/upload.py)**:
+* **[core/upload.py](../core/upload.py)**:
   * `UploadCoordinator`: In-memory two-phase transaction coordinator.
   * Stream HTTP bytes directly to disk with constant **O(1) RAM** footprint (`stream_request_to_disk`).
   * On-the-fly SHA-256 calculation.
   * Automatic rollback (`await tx.rollback()`, partial file deletion) upon connection loss.
 
-* **[core/security.py](../../core/security.py)**:
+* **[core/security.py](../core/security.py)**:
   * Password hashing using **Argon2id**.
   * JWT access token issuance and validation.
   * Asymmetric RSA encryption for secure credential exchange.
 
-* **[core/lifecycle.py](../../core/lifecycle.py)**:
+* **[core/lifecycle.py](../core/lifecycle.py)**:
   * Application startup dispatcher `@on_startup` (runs migrations, cache warming, and background daemons before opening sockets).
 
-* **[core/lib/config.py](../../core/lib/config.py)**:
+* **[core/lib/config.py](../core/lib/config.py)**:
   * Settings parser for `settings.yaml` supporting environment variable overrides.
 
 ---

@@ -12,7 +12,7 @@
 3. [Сравнение: rsgi-wsrpc vs Django vs FastAPI](#-сравнение-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [Быстрый старт за 60 секунд](#-быстрый-старт-за-60-секунд)
 5. [Сетевое ядро (Core Engine)](#-сетевое-ядро-core-engine)
-   * [Полное руководство разработчика ядра (core.md)](core.md)
+   * [Полное руководство разработчика ядра (docs_ru/core.md)](docs_ru/core.md)
 6. [Официальные системные плагины (Plugins)](#-официальные-системные-плагины-plugins)
    * [Плагин базы данных (db)](#1-плагин-базы-данных-pluginsdb)
    * [Плагин авторизации и пользователей (auth)](#2-плагин-пользователей-и-авторизации-pluginsauth)
@@ -243,11 +243,11 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Сетевое ядро (Core Engine)
 
-> 📖 **Исчерпывающее техническое руководство по ядру со всеми примерами кода см. в документе: [docs_ru/core.md](core.md)**.
+> 📖 **Исчерпывающее техническое руководство по ядру со всеми примерами кода см. в документе: [docs_ru/core.md](docs_ru/core.md)**.
 
 Сетевое ядро расположено в каталоге `core/` и содержит базовые примитивы:
 
-* **[core/session.py](../../core/session.py)**:
+* **[core/session.py](core/session.py)**:
   * Класс `JsonRpcSession` — управление постоянным сокетом клиента.
   * Мультиплексирование входящих и исходящих RPC-вызовов по уникальному числовому `id`.
   * Встроенный **Rate-Limiting (Token Bucket)** для автоматической защиты от флуда (30 req/s) без накладных расходов.
@@ -255,25 +255,25 @@ await client.callStream('task.run_long', {}, (chunk) => {
   * Реестр колбэков завершения сессии: `session.register_on_close(callback)` для очистки фоновых задач и транзакций.
   * Симметричный вызов клиента с сервера: `await session.send_request("client_method", params)`.
 
-* **[core/router.py](../../core/router.py)**:
+* **[core/router.py](core/router.py)**:
   * Декоратор `@http_route(path, methods)` для регистрации прямых HTTP-обработчиков поверх RSGI.
   * Прием сырых стримов байтов, вебхуков и healthcheck без лишнего оверхеда.
 
-* **[core/upload.py](../../core/upload.py)**:
+* **[core/upload.py](core/upload.py)**:
   * Координатор двухфазной транзакционной загрузки `UploadCoordinator`.
   * Потоковый прием файлов из протокола RSGI с расходом оперативной памяти **O(1) RAM** (`stream_request_to_disk`).
   * Вычисление контрольной суммы SHA-256 на лету в процессе приема байтов.
   * Автоматический откат (`await tx.rollback()`, удаление временных файлов) при обрыве соединения.
 
-* **[core/security.py](../../core/security.py)**:
+* **[core/security.py](core/security.py)**:
   * Надежное хэширование паролей на базе стойкого алгоритма **Argon2id**.
   * Генерация и валидация JWT access-токенов.
   * Асимметричное шифрование RSA для безопасной передачи чувствительных данных.
 
-* **[core/lifecycle.py](../../core/lifecycle.py)**:
+* **[core/lifecycle.py](core/lifecycle.py)**:
   * Диспетчер инициализации приложения `@on_startup` (выполняет миграции БД, прогрев кэша и запуск фоновых задач до начала приема трафика).
 
-* **[core/lib/config.py](../../core/lib/config.py)**:
+* **[core/lib/config.py](core/lib/config.py)**:
   * Парсер настроек `settings.yaml` со строгой валидацией и поддержкой переопределения через переменные окружения.
 
 ---
@@ -310,7 +310,7 @@ await client.callStream('task.run_long', {}, (chunk) => {
 ---
 
 ### 3. Плагин файлов и двухфазной загрузки (`plugins/files`)
-* Подробная архитектура: см. **[docs_ru/files.md](files.md)**.
+* Подробная архитектура: см. **[docs_ru/files.md](docs_ru/files.md)**.
 * **Как работает Two-Phase Commit**:
   1. Клиент запрашивает транзакцию загрузки: сервер выделяет уникальную хэш-папку `/tmp/agrita_uploads/<folder_hash>/`.
   2. Клиент заливает файлы потоком через `POST /upload`. Байты стримятся прямо на диск без переполнения памяти воркера.
@@ -410,7 +410,7 @@ rpc.registerMethod('ui.confirm', async (params) => {
 });
 ```
 
-> 📖 **Исчерпывающие примеры интеграции с UI-фреймворками (Svelte, React, Vue), обработки ошибок и отписок см. в [docs_ru/core.md](core.md#8-клиент-typescriptjavascript-clientwsrpcts)**.
+> 📖 **Исчерпывающие примеры интеграции с UI-фреймворками (Svelte, React, Vue), обработки ошибок и отписок см. в [docs_ru/core.md](docs_ru/core.md#8-клиент-typescriptjavascript-clientwsrpcts)**.
 
 ---
 
