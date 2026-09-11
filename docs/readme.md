@@ -1,88 +1,162 @@
-# rsgi-wsrpc: The Reactive Fullstack Framework for Python
+# rsgi-wsrpc: Reactive Full-Featured Python Framework
 
-> **"Everything Django should have become, and everything FastAPI forgot to include."**  
-> High-performance async Python framework powered by **Rust (Granian RSGI)** with a symmetric **WSRPC (JSON-RPC 2.0)** protocol, built-in async database, auth, and transactional Two-Phase Commit file streaming.
+> **"Everything Django should have been, and everything FastAPI forgot."**  
+> High-performance asynchronous web framework built on **Rust (Granian RSGI)** with bidirectional **WSRPC (JSON-RPC 2.0)**, built-in async database ORM, modern authentication, and transactional two-phase file uploading.
 
 ---
 
 ## 🧭 Table of Contents
 1. [Core Philosophy & Manifesto](#-core-philosophy--manifesto)
 2. [Architecture: Core + Plugins + Application](#-architecture-core--plugins--application)
+   * [Recommended Project Structure (Directory Tree)](#-recommended-project-structure-directory-tree)
 3. [Comparison: rsgi-wsrpc vs Django vs FastAPI](#-comparison-rsgi-wsrpc-vs-django-vs-fastapi)
-4. [Quick Start in 60 Seconds](#-quick-start-in-60-seconds)
+4. [Quickstart in 60 Seconds](#-quickstart-in-60-seconds)
 5. [Core Network Engine](#-core-network-engine)
+   * [Complete Core Developer Guide (core.md)](core.md)
 6. [Official System Plugins](#-official-system-plugins)
    * [Database Plugin (db)](#1-database-plugin-pluginsdb)
-   * [Authentication & User Management Plugin (auth)](#2-authentication--user-management-plugin-pluginsauth)
-   * [File Storage & Two-Phase Upload Plugin (files)](#3-file-storage--two-phase-upload-plugin-pluginsfiles)
-7. [Creating Custom Plugins & Modules](#-creating-custom-plugins--modules)
+   * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
+   * [Two-Phase File Upload Plugin (files)](#3-two-phase-file-upload-plugin-pluginsfiles)
+7. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
+8. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
+9. [License](#-license)
 
 ---
 
 ## 💡 Core Philosophy & Manifesto
 
-The modern web has evolved: users expect instantaneous interfaces (1–5 ms latency), real-time reactive state updates, and streaming progress without full-page reloads.
+The modern web has changed: users no longer tolerate static web pages reloading for hundreds of milliseconds. Users expect instant interactions (1–5 ms), reactive real-time state synchronization, and live progress streaming.
 
-Python developers, however, have remained caught between two legacy paradigms:
-1. **Django** — A 20-year-old monolithic architecture designed for the Web 2.0 era. Retrofitting it for WebSockets requires a complex stack of `Django + DRF + Channels + Redis + Celery + Daphne`, consuming gigabytes of memory.
-2. **FastAPI** — Modern and fast, yet tethered to traditional HTTP/1.1 request-response round-trips. Each client action spawns a new connection with kilobytes of header overhead. Crucially, it lacks "batteries included" — developers must assemble authentication, sessions, and file storage from scratch for every project.
+Yet Python developers were forced to choose between two extremes:
+1. **Django** — a 20-year-old monolithic design from the Web 2.0 era. Adding websockets and reactivity requires bundling `Django + DRF + Channels + Redis + Celery + Daphne`, consuming hundreds of megabytes of RAM per worker.
+2. **FastAPI** — performant, but trapped in the flat HTTP/1.1 REST paradigm (Request-Response). Every user action opens a new TCP connection, exchanges kilobytes of redundant HTTP headers, and lacks built-in batteries (auth, sessions, file transactions) — forcing developers to stitch together 50 disparate third-party libraries.
 
-**`rsgi-wsrpc` merges the best of all worlds:**
-* **Powered by Rust & Granian** — Raw RSGI throughput without Python GIL execution bottlenecks.
-* **Unified WSRPC Protocol (JSON-RPC 2.0)** — A single multiplexed connection for all RPC actions, symmetric invocation (server can push and call client methods), and native streaming.
-* **Batteries Included** — Built-in database engine, authentication, and Two-Phase Commit file streaming, provided as modular, decoupled plugins.
+**`rsgi-wsrpc` combines the best of both worlds:**
+* **From Rust and Granian** — blistering RSGI runtime performance without Python GIL overhead.
+* **From WSRPC (JSON-RPC 2.0)** — a single persistent, multiplexed channel for all operations, symmetric RPC invocation (server can call client), and native multi-return streaming.
+* **From Django** — production-grade batteries (Auth, DB, Two-Phase File uploads) delivered as decoupled, lightweight plugins.
 
 ---
 
 ## 🏛 Architecture: Core + Plugins + Application
 
-The framework adheres strictly to Clean Architecture and unidirectional dependency flow:
+The architecture enforces a strict unidirectional dependency hierarchy (Clean Architecture):
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       1. YOUR APPLICATION (Application)                 │
 │                                                                         │
-│   The orchestrator: loads settings (settings.yaml), attaches necessary  │
-│   system plugins, and registers business domain handlers.               │
-│   Examples: Social Network, CRM, Portal, IoT Gateway, Custom Dashboard. │
+│   Knows about all components: loads configuration (settings.yaml),      │
+│   activates necessary system plugins, and executes domain business logic│
+│   Examples: Social Network, CRM, Forum, Customer Portal, IoT Server.    │
 └────────────────────────────────────┬────────────────────────────────────┘
-                                     │ imports & configures
+                                     │ consumes and aggregates
 ┌────────────────────────────────────▼────────────────────────────────────┐
-│                    2. SYSTEM & DOMAIN PLUGINS                           │
+│                    2. SYSTEM & APPLICATION PLUGINS                      │
 │                                                                         │
 │   [ Plugin: DB ]        [ Plugin: Auth ]       [ Plugin: Files ]        │
-│   Async SQLAlchemy      Users, JWT tokens,     2PC file streaming,      │
-│   SQLite / PostgreSQL   roles & RLS security   registry & Nginx offload │
+│   Async SQLAlchemy 2.0  Users, JWT,            2PC file streaming,      │
+│   SQLite / PostgreSQL   roles and permissions  registry & Nginx offload │
 │                                                                         │
 │   [ Domain Plugins: Forum, Billing, Notifications, Analytics... ]       │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ registers into
 ┌────────────────────────────────────▼────────────────────────────────────┐
-│                        3. CORE NETWORK ENGINE                           │
+│                        3. NETWORK CORE (Core)                           │
 │                                                                         │
-│   High-performance WebSocket & RSGI runtime (Granian in Rust).          │
-│   Maintains ZERO awareness of databases or application business logic.  │
-│   Responsible for: WSRPC protocol, multi-return, sessions, auto-abort. │
+│   Pure high-performance socket and RSGI runtime (Granian in Rust).      │
+│   ZERO knowledge of databases or application domain models.             │
+│   Responsible for: WSRPC (JSON-RPC 2.0), multi-return, sessions, 2PC.   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Architectural Tenets:
-1. **Autonomous Core**: `core/` has zero dependencies on application models or external databases.
-2. **Modular Plugins**: Each plugin addresses one capability and registers cleanly with the core (`@rpc_method`, `@on_startup`, `session.register_on_close`).
-3. **App-Driven Composition**: Need a lean microservice without a database? Use the Core alone. Building a fullstack web app? Enable the full battery bundle.
+### Core Architectural Rules:
+1. **The Core is Autonomous**: `core/` contains zero imports from application domains or database models.
+2. **Plugins are Modular**: Each plugin tackles one concern and registers its handlers via core APIs (`@rpc_method`, `@on_startup`, `session.register_on_close`).
+3. **Application Governs Composition**: Need a lightweight microservice without a database? Simply omit the `db` plugin. Need a full-stack portal? Import the complete battery bundle.
+
+---
+
+### 📁 Recommended Project Structure (Directory Tree)
+
+Below is the production-tested repository layout, clearly demarcating the network engine (`core/`), official batteries (`app/system/`), and custom application modules (`app/<modules>/`):
+
+```text
+my_project/
+├── core/                           # ⚡ NETWORK CORE (RSGI + WSRPC)
+│   ├── lib/
+│   │   └── config.py               # Settings loader for settings.yaml
+│   ├── constants.py                # System constants and roles (UserRole)
+│   ├── lifecycle.py                # Async hooks @on_startup and @on_shutdown
+│   ├── logger.py                   # High-performance structured logging
+│   ├── router.py                   # HTTP routing on top of RSGI (@http_route)
+│   ├── security.py                 # Argon2id, JWT tokens, RSA cryptography
+│   ├── session.py                  # JsonRpcSession, @rpc_method, ContextVars, Rate-Limiter
+│   └── upload.py                   # Two-phase O(1) RAM upload engine (2PC) & Coordinator
+│
+├── app/                            # 📦 APPLICATION & PLUGIN LAYER
+│   ├── system/                     # 🔌 System Plugins (Official Batteries)
+│   │   ├── db.py                   # Async SQLAlchemy 2.0 engine (async_session, Base)
+│   │   ├── broadcast.py            # Event broadcaster across active sockets
+│   │   ├── auth/                   # Users, scopes, and Row-Level Security (RLS)
+│   │   │   ├── models.py           # Models: User, Role, Permit
+│   │   │   ├── handlers.py         # RPC methods: auth.*
+│   │   │   ├── permissions.py      # Scope and role verification logic
+│   │   │   └── security.py         # Hashing & authorization rules
+│   │   ├── login/                  # Authentication, RSA handshake, RefreshToken
+│   │   │   ├── handlers.py         # RPC methods: login.submit, login.refresh, login.whoami
+│   │   │   └── db.py               # Active sessions and token persistence
+│   │   ├── files/                  # File metadata registry & storage service
+│   │   │   ├── models.py           # FileMetadata ORM model
+│   │   │   ├── service.py          # FileStorageService (quota, schema migration, deletion)
+│   │   │   └── handlers.py         # HTTP route /upload and RPC methods: files.*
+│   │   ├── admin/                  # Administration control plane (sessions, cache, users)
+│   │   │   └── handlers.py
+│   │   └── internal_api/           # Interactive RPC documentation generator
+│   │       ├── api.html            # Built-in UI sandbox
+│   │       ├── handlers.py         # API inspection endpoints
+│   │       └── generate_docs.py    # Docstring and signature parser
+│   │
+│   └── <business_modules>/         # 🚀 Your application business domains
+│       ├── forum/                  # Example: Community discussion module
+│       │   ├── models.py           # Topic, Message, Tag models
+│       │   └── handlers.py         # RPC methods: forum.get_topics, forum.create_topic
+│       ├── billing/                # Example: Billing and invoicing module
+│       │   ├── models.py           # Invoice, Transaction models
+│       │   └── handlers.py         # RPC methods: billing.create_invoice, billing.pay
+│       └── notifications/          # Example: Real-time notification service
+│           └── handlers.py         # Push dispatching via broadcast
+│
+├── client/                         # 💻 CLIENT LIBRARIES
+│   └── wsrpc.ts                    # Official TypeScript/JavaScript WSRPC client
+│
+├── docs/                           # 📚 Framework Documentation (EN)
+│   ├── readme.md
+│   ├── core.md                     # Comprehensive Core developer guide
+│   └── files.md                    # Two-phase file upload guide (2PC)
+│
+├── docs_ru/                        # 📚 Framework Documentation (RU Twin)
+│   ├── readme.md
+│   ├── core.md                     # Comprehensive Core developer guide
+│   └── files.md                    # Two-phase file upload guide (2PC)
+│
+├── main.py                         # 🚀 Entrypoint: plugin composition, RSGI application
+├── settings.yaml                   # ⚙️ Configuration (database, ports, secrets)
+└── pyproject.toml                  # 📦 Dependencies and package manifest
+```
 
 ---
 
 ## ⚡ Comparison: rsgi-wsrpc vs Django vs FastAPI
 
-### 1. Client-Server Communication Flow
+### 1. Client-Server Interaction Model
 
 #### Traditional REST (FastAPI / Django):
-Every request requires a TCP/TLS handshake, large header payloads, and teardown:
+Every operation re-initiates a TCP/TLS handshake, transfers cookies/headers, and terminates:
 ```text
 [ Client ] ──── TCP + TLS Handshake (50-100 ms) ────► [ Server ]
 [ Client ] ──── POST /api/items (Headers + Body) ───► [ Server ]
-[ Client ] ◄─── 200 OK (Headers + Body) ──────────── [ Server ]  (Connection closed)
+[ Client ] ◄─── 200 OK (Headers + Body) ──────────── [ Server ]  (connection closed)
 
 [ Client ] ──── TCP + TLS Handshake (50-100 ms) ────► [ Server ]
 [ Client ] ──── GET /api/user/profile ──────────────► [ Server ]
@@ -90,10 +164,10 @@ Every request requires a TCP/TLS handshake, large header payloads, and teardown:
 ```
 
 #### Reactive WSRPC (`rsgi-wsrpc`):
-A single persistent multiplexed WebSocket connection. Zero handshake overhead, 1–3 ms round-trips:
+A single persistent, multiplexed WebSocket channel. Zero handshake latency, instant 1–3 ms roundtrips:
 ```text
 [ Client ] ═════════════════════════════════════════► [ Server ]
-           (Persistent, secure multiplexed WSRPC stream)
+           (Persistent secure WSRPC socket)
            
            ─── id: 1, method: "items.create" ───────► (1 ms)
            ◄── id: 1, result: { id: 42 } ──────────── (1 ms)
@@ -101,61 +175,61 @@ A single persistent multiplexed WebSocket connection. Zero handshake overhead, 1
            ─── id: 2, method: "user.get_profile" ───► (1 ms)
            ◄── id: 2, result: { name: "Alex" } ────── (1 ms)
            
-           ◄── SERVER PUSH: method: "notify" ──────── (Server calls client directly!)
+           ◄── SERVER PUSH: method: "notify" ──────── (Server initiates RPC on client!)
 ```
 
 ### 2. Feature Matrix
 
 | Feature | Django | FastAPI | `rsgi-wsrpc` |
 | :--- | :--- | :--- | :--- |
-| **Network Runtime** | Python WSGI / slow ASGI | Uvicorn (ASGI) | **Granian (Rust RSGI)** 🚀 |
+| **Network Engine** | Python WSGI / slow ASGI | Uvicorn (ASGI) | **Granian (Rust RSGI)** 🚀 |
 | **Response Latency** | 80–250 ms | 30–120 ms | **1–5 ms** |
-| **Symmetry** | ❌ Client ➔ Server only | ❌ Client ➔ Server only | ✅ **Client ⇄ Server (bidirectional)** |
-| **Streaming Progress** | ❌ Requires Redis + Channels | ❌ Custom WebSocket boilerplate | ✅ **Native Multi-return (`stream: true`)** |
+| **Symmetry** | ❌ Client ➔ Server only | ❌ Client ➔ Server only | ✅ **Client ⇄ Server (Bidirectional)** |
+| **Progress Streaming** | ❌ Requires Redis + Channels | ❌ Heavy websocket boilerplate | ✅ **Native multi-return (`stream: true`)** |
 | **RAM Footprint** | ~150–250 MB per worker | ~80–120 MB per worker | **~25–40 MB per worker** |
-| **File Uploads** | Buffered into worker memory | SpooledFile / RAM buffering | **Streaming O(1) RAM + 2PC + Nginx Offload** |
-| **Built-in Auth** | ✅ Built-in (synchronous) | ❌ None (must build yourself) | ✅ **Built-in (JWT + Refresh + Argon2)** |
+| **File Transfers** | Buffered in worker RAM | Buffered in RAM / SpooledFile | **Streaming O(1) RAM + 2PC + Nginx Offload** |
+| **Built-in Auth** | ✅ Included (Synchronous) | ❌ None (Roll your own) | ✅ **Included (JWT + Refresh + Argon2)** |
 | **Infrastructure** | Python + Postgres + Redis + Celery | Python + Postgres + ... | **Single Granian binary + SQLite/Postgres** |
 
 ---
 
-## 🚀 Quick Start in 60 Seconds
+## 🚀 Quickstart in 60 Seconds
 
 ### 1. Minimal Server (`main.py`)
 ```python
 from core.session import rpc_method, JsonRpcSession
 from core.lifecycle import on_startup
 
-# Register an RPC method
+# Register RPC method
 @rpc_method("math.add")
 async def add_numbers(session: JsonRpcSession, params: dict):
     a = params.get("a", 0)
     b = params.get("b", 0)
     return {"result": a + b}
 
-# Method with streaming progress (multi-return)
+# Multi-return streaming progress method
 @rpc_method("task.run_long")
 async def run_task(session: JsonRpcSession, params: dict):
     rpc_id = params.get("rpc_id")
     for step in range(1, 4):
-        # Push intermediate progress chunk over WebSocket
+        # Transmit intermediate progress chunk to the socket
         await session.send_stream_chunk(rpc_id, {"progress": step * 33})
     return {"status": "completed"}
 ```
 
-### 2. Run with Granian
+### 2. Launch Server via Granian
 ```bash
 granian --interface rsgi --host 127.0.0.1 --port 8080 main:app
 ```
 
-### 3. Client Invocation (JavaScript / TypeScript)
+### 3. Invoke from Client (JavaScript / TypeScript)
 ```javascript
-import { WsrpcClient } from './wsrpc.js';
+import { BinaryWSRPC } from './wsrpc.js';
 
-const client = new WsrpcClient('ws://127.0.0.1:8080');
+const client = new BinaryWSRPC('ws://127.0.0.1:8080');
 await client.connect();
 
-// Standard RPC Call
+// Regular RPC call
 const sum = await client.call('math.add', { a: 10, b: 25 });
 console.log(sum.result); // 35
 
@@ -169,38 +243,48 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Core Network Engine
 
-The core engine is located in `core/` and provides fundamental transport primitives:
+> 📖 **For the complete technical manual with code examples, see: [docs/core.md](core.md)**.
+
+The network core resides in the `core/` directory and exposes the following building blocks:
 
 * **[core/session.py](../../core/session.py)**:
-  * `JsonRpcSession` — manages persistent client WebSocket connections.
-  * Inbound and outbound message multiplexing via sequential numeric `id`.
-  * Built-in **Rate-Limiting (Token Bucket)** protecting against RPC flooding and Denial of Service.
-  * Context isolation via `ContextVar` (`current_transport_ctx`, `current_session_ctx`, `current_rpc_id_ctx`, `current_user_ctx`), accessible anywhere in asynchronous execution trees.
-  * Termination callback registry: `session.register_on_close(callback)`.
+  * `JsonRpcSession`: Manages persistent client sockets.
+  * Multiplexes incoming and outgoing RPC requests by numeric `id`.
+  * Built-in **Rate-Limiter (Token Bucket)** for protection against flooding (30 req/s) with zero runtime overhead.
+  * Isolated Python `ContextVar` instances (`current_user_ctx`, `current_session_ctx`, `current_rpc_id_ctx`, `current_transport_ctx`), accessible anywhere in the async execution context.
+  * Session termination hooks: `session.register_on_close(callback)` for clean resource teardown.
+  * Symmetric client invocation from server: `await session.send_request("client_method", params)`.
+
+* **[core/router.py](../../core/router.py)**:
+  * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
+  * High-throughput file streams, webhooks, and health checks.
 
 * **[core/upload.py](../../core/upload.py)**:
-  * `UploadCoordinator` managing Two-Phase Commit transactions.
-  * Streaming RSGI file intake with constant **O(1) RAM** footprint (`stream_request_to_disk`).
-  * On-the-fly SHA-256 calculation as chunks arrive from the network.
-  * Guaranteed automatic rollback (immediate temp directory cleanup) upon WebSocket disconnection.
+  * `UploadCoordinator`: In-memory two-phase transaction coordinator.
+  * Stream HTTP bytes directly to disk with constant **O(1) RAM** footprint (`stream_request_to_disk`).
+  * On-the-fly SHA-256 calculation.
+  * Automatic rollback (`await tx.rollback()`, partial file deletion) upon connection loss.
 
 * **[core/security.py](../../core/security.py)**:
-  * Password hashing using state-of-the-art **Argon2id**.
-  * JWT access token issuance and signature verification.
-  * Asymmetric RSA encryption utilities for client-side password encryption.
+  * Password hashing using **Argon2id**.
+  * JWT access token issuance and validation.
+  * Asymmetric RSA encryption for secure credential exchange.
 
 * **[core/lifecycle.py](../../core/lifecycle.py)**:
-  * Eager application initialization dispatcher (`@on_startup`), executing database migrations, cache warmup, and background tasks before accepting traffic.
+  * Application startup dispatcher `@on_startup` (runs migrations, cache warming, and background daemons before opening sockets).
+
+* **[core/lib/config.py](../../core/lib/config.py)**:
+  * Settings parser for `settings.yaml` supporting environment variable overrides.
 
 ---
 
 ## 🔌 Official System Plugins
 
-The framework includes pre-built, tested system plugins (located in `app/system/`):
+The framework includes pre-built and tested system batteries in `app/system/`:
 
 ### 1. Database Plugin (`plugins/db`)
-* **Technology**: SQLAlchemy 2.0 (Async) + `orjson` for high-speed JSON serialization.
-* **Storage Engines**: SQLite out of the box (zero external database configuration required). Switch to PostgreSQL with a single configuration line in `settings.yaml`.
+* **Stack**: Async SQLAlchemy 2.0 + `orjson` for ultra-fast JSON serialization.
+* **Engines**: SQLite out-of-the-box (zero configuration). Seamless switch to PostgreSQL via `settings.yaml`.
 * **Usage**:
   ```python
   from app.system.db import async_session, Base
@@ -212,12 +296,12 @@ The framework includes pre-built, tested system plugins (located in `app/system/
 
 ---
 
-### 2. Authentication & User Management Plugin (`plugins/auth`)
-* **Capabilities**:
-  * `User` model, role-based access (`admin`, `moderator`, `user`, `guest`).
-  * **Row-Level Security (RLS)** primitives: `BasicSecureModel` and `RowSecureModel` for automated ownership-based filtering.
-  * Session refresh via `RefreshToken` and active device session monitoring in `ActiveSession`.
-  * Zero-boilerplate access to current authenticated user:
+### 2. Authentication & User Plugin (`plugins/auth`)
+* **Features**:
+  * `User` model, role hierarchy (`admin`, `moderator`, `user`, `guest`).
+  * **Row-Level Security (RLS)**: base classes `BasicSecureModel` and `RowSecureModel` for tenant/owner scoping.
+  * Reliable session extension via `RefreshToken` and multi-device tracking in `ActiveSession`.
+  * Context-based user retrieval anywhere without passing parameters:
     ```python
     from core.session import current_user_ctx
     user = current_user_ctx.get()
@@ -225,21 +309,21 @@ The framework includes pre-built, tested system plugins (located in `app/system/
 
 ---
 
-### 3. File Storage & Two-Phase Upload Plugin (`plugins/files`)
-* Complete architecture specification: see **[docs/files.md](files.md)**.
+### 3. Two-Phase File Upload Plugin (`plugins/files`)
+* Comprehensive architecture: see **[docs/files.md](files.md)**.
 * **Two-Phase Commit Workflow**:
-  1. Client initiates an upload transaction: the server provisions an isolated folder `/tmp/agrita_uploads/<folder_hash>/`.
-  2. Client streams files via `POST /upload`. Bytes write directly to disk without consuming worker memory.
-  3. If connection drops mid-upload, the core triggers `session.on_close` and instantly wipes the temporary folder.
-  4. On successful completion, the folder is atomically moved to permanent `/files/<folder_hash>/` in 0 ms.
-  5. Files are automatically recorded in the unified `file_metadata` registry.
-  6. Static files are served directly via **Nginx** zero-copy offload.
+  1. Client initiates upload transaction: server provisions isolated `/tmp/agrita_uploads/<folder_hash>/`.
+  2. Client streams files via `POST /upload`. Bytes stream directly to disk without memory buffering.
+  3. If client disconnects — core triggers `session.on_close` and erases the temp folder immediately.
+  4. On completion — folder moves atomically to production storage `/files/<folder_hash>/` in 0 milliseconds.
+  5. Files are indexed in unified `file_metadata` database table (quotas, original names, MIME types).
+  6. Downloads are served directly by **Nginx** with zero Python overhead.
 
 ---
 
-## 🛠 Creating Custom Plugins & Modules
+## 🛠 Creating Custom Plugins & Modules in the app Directory
 
-Building custom plugins (such as a support ticket module `tickets`) is straightforward:
+Creating a custom feature module (e.g. support ticket system `app/tickets/`) is straightforward:
 
 ```python
 # app/tickets/handlers.py
@@ -257,6 +341,7 @@ async def create_ticket(session, params):
     text = params.get("text")
     folder_hash = params.get("folder_hash") # If files were attached
 
+    # Persist ticket in database
     async with async_session() as db:
         async with db.begin():
             ticket = Ticket(title=title, text=text, author_id=user.id, folder=folder_hash)
@@ -271,7 +356,7 @@ async def delete_ticket(session, params):
     async with async_session() as db:
         ticket = await db.get(Ticket, ticket_id)
         if ticket and ticket.folder:
-            # Atomically delete all attachments from disk and metadata registry
+            # Atomically delete all bundled files from disk and registry
             await FileStorageService.delete_bundle(ticket.folder)
         await db.delete(ticket)
         await db.commit()
@@ -279,8 +364,34 @@ async def delete_ticket(session, params):
     return {"deleted": True}
 ```
 
+To enable the module, import its handlers in `main.py`:
+```python
+# main.py
+import app.tickets.handlers  # noqa: F401
+```
+
+---
+
+## 💻 Client Library (TypeScript/JavaScript)
+
+The repository provides the official `client/wsrpc.ts` client:
+* Full auto-reconnection and exponential backoff.
+* Type-safe TypeScript signatures.
+* Native multi-return streaming (`callStream`).
+* Client-side RPC registration (`registerMethod`).
+
+```typescript
+import { BinaryWSRPC } from './wsrpc';
+
+const wsrpc = new BinaryWSRPC('ws://127.0.0.1:8080');
+await wsrpc.connect();
+
+const profile = await wsrpc.call('user.get_profile', {});
+console.log('User profile:', profile);
+```
+
 ---
 
 ## 📄 License
-Released under the permissive **MIT License**.
+This project is licensed under the **MIT License**.  
 Free for commercial use, modification, and distribution.

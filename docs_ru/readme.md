@@ -8,14 +8,18 @@
 ## 🧭 Содержание
 1. [Главная идея и манифест](#-главная-идея-и-манифест)
 2. [Архитектура: Ядро + Плагины + Приложение](#-архитектура-ядро--плагины--приложение)
+   * [Рекомендуемая структура проекта (Файловое дерево)](#-рекомендуемая-структура-проекта-файловое-дерево)
 3. [Сравнение: rsgi-wsrpc vs Django vs FastAPI](#-сравнение-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [Быстрый старт за 60 секунд](#-быстрый-старт-за-60-секунд)
 5. [Сетевое ядро (Core Engine)](#-сетевое-ядро-core-engine)
+   * [Полное руководство разработчика ядра (core.md)](core.md)
 6. [Официальные системные плагины (Plugins)](#-официальные-системные-плагины-plugins)
    * [Плагин базы данных (db)](#1-плагин-базы-данных-pluginsdb)
    * [Плагин авторизации и пользователей (auth)](#2-плагин-пользователей-и-авторизации-pluginsauth)
    * [Плагин файлов и двухфазной загрузки (files)](#3-плагин-файлов-и-двухфазной-загрузки-pluginsfiles)
-7. [Создание собственных плагинов и модулей](#-создание-собственных-плагинов-и-модулей)
+7. [Создание собственных плагинов и модулей в папке app](#-создание-собственных-плагинов-и-модулей-в-папке-app)
+8. [Клиентская библиотека (TypeScript/JavaScript)](#-клиентская-библиотека-typescriptjavascript)
+9. [Лицензия](#-лицензия)
 
 ---
 
@@ -70,6 +74,76 @@
 1. **Ядро автономно**: в `core/` нет ни одного импорта из приложения или БД.
 2. **Плагины модульны**: каждый плагин решает одну задачу и регистрирует свои методы через API ядра (`@rpc_method`, `@on_startup`, `session.register_on_close`).
 3. **Приложение управляет составом**: если вам нужен микросервис без БД — просто не подключайте плагин `db`. Нужен полный стек — подключаете готовый бандл.
+
+---
+
+### 📁 Рекомендуемая структура проекта (Файловое дерево)
+
+Ниже представлена рекомендуемая и протестированная на боевых проектах структура репозитория с четким разделением сетевого ядра (`core/`), системных плагинов (`app/system/`) и прикладных модулей приложения (`app/<модули>/`):
+
+```text
+my_project/
+├── core/                           # ⚡ СЕТЕВОЕ ЯДРО (RSGI + WSRPC)
+│   ├── lib/
+│   │   └── config.py               # Загрузка настроек settings.yaml
+│   ├── constants.py                # Системные константы и роли (UserRole)
+│   ├── lifecycle.py                # Асинхронные хуки @on_startup и @on_shutdown
+│   ├── logger.py                   # Высокопроизводительное логирование
+│   ├── router.py                   # HTTP-роутинг поверх RSGI (@http_route)
+│   ├── security.py                 # Argon2id, JWT токены, RSA криптография
+│   ├── session.py                  # JsonRpcSession, @rpc_method, ContextVars, Rate-Limiting
+│   └── upload.py                   # Двухфазная загрузка O(1) RAM (2PC) и UploadCoordinator
+│
+├── app/                            # 📦 СЛОЙ ПРИЛОЖЕНИЯ И ПЛАГИНОВ
+│   ├── system/                     # 🔌 Системные плагины ядра (Official Batteries)
+│   │   ├── db.py                   # Асинхронный движок SQLAlchemy 2.0 (async_session, Base)
+│   │   ├── broadcast.py            # Широковещательные уведомления активных сокетов
+│   │   ├── auth/                   # Пользователи, права и Row-Level Security (RLS)
+│   │   │   ├── models.py           # Модели User, Role, Permit
+│   │   │   ├── handlers.py         # RPC-методы auth.*
+│   │   │   ├── permissions.py      # Проверка прав доступа и ролей
+│   │   │   └── security.py         # Хэширование и правила безопасности
+│   │   ├── login/                  # Аутентификация, RSA handshake, RefreshToken
+│   │   │   ├── handlers.py         # RPC-методы login.submit, login.refresh, login.whoami
+│   │   │   └── db.py               # Сессии и токены в базе данных
+│   │   ├── files/                  # Служба файлов и реестр метаданных
+│   │   │   ├── models.py           # Модель FileMetadata в БД
+│   │   │   ├── service.py          # FileStorageService (учет, автомиграция, удаление бандлов)
+│   │   │   └── handlers.py         # HTTP-роут /upload и RPC-методы files.*
+│   │   ├── admin/                  # Административная панель (сессии, кэш, пользователи)
+│   │   │   └── handlers.py
+│   │   └── internal_api/           # Авто-генерация интерактивной документации RPC
+│   │       ├── api.html            # Встроенный UI песочницы
+│   │       ├── handlers.py         # Эндпоинты инспекции API
+│   │       └── generate_docs.py    # Парсер докстрингов и сигнатур
+│   │
+│   └── <business_modules>/         # 🚀 Ваши прикладные модули приложения
+│       ├── forum/                  # Пример: Модуль форума и сообщества
+│       │   ├── models.py           # Модели Topic, Message, Tag
+│       │   └── handlers.py         # RPC-методы forum.get_topics, forum.create_topic
+│       ├── billing/                # Пример: Модуль биллинга и счетов
+│       │   ├── models.py           # Модели Invoice, Transaction
+│       │   └── handlers.py         # RPC-методы billing.create_invoice, billing.pay
+│       └── notifications/          # Пример: Сервис уведомлений и событий
+│           └── handlers.py         # Реактивные рассылки через broadcast
+│
+├── client/                         # 💻 КЛИЕНТСКИЕ БИБЛИОТЕКИ
+│   └── wsrpc.ts                    # Официальный TypeScript/JavaScript WSRPC-клиент
+│
+├── docs/                           # 📚 Документация фреймворка (EN)
+│   ├── readme.md
+│   ├── core.md                     # Полное руководство разработчика ядра
+│   └── files.md                    # Руководство по загрузке файлов (2PC)
+│
+├── docs_ru/                        # 📚 Зеркальная документация фреймворка (RU)
+│   ├── readme.md
+│   ├── core.md                     # Полное руководство разработчика ядра
+│   └── files.md                    # Руководство по загрузке файлов (2PC)
+│
+├── main.py                         # 🚀 Точка входа: сборка плагинов, RSGI app
+├── settings.yaml                   # ⚙️ Конфигурация проекта (БД, порты, секреты)
+└── pyproject.toml                  # 📦 Зависимости и манифест проекта
+```
 
 ---
 
@@ -150,9 +224,9 @@ granian --interface rsgi --host 127.0.0.1 --port 8080 main:app
 
 ### 3. Вызов с клиента (JavaScript / TypeScript)
 ```javascript
-import { WsrpcClient } from './wsrpc.js';
+import { BinaryWSRPC } from './wsrpc.js';
 
-const client = new WsrpcClient('ws://127.0.0.1:8080');
+const client = new BinaryWSRPC('ws://127.0.0.1:8080');
 await client.connect();
 
 // Обычный вызов
@@ -169,20 +243,27 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Сетевое ядро (Core Engine)
 
+> 📖 **Исчерпывающее техническое руководство по ядру со всеми примерами кода см. в документе: [docs_ru/core.md](core.md)**.
+
 Сетевое ядро расположено в каталоге `core/` и содержит базовые примитивы:
 
 * **[core/session.py](../../core/session.py)**:
   * Класс `JsonRpcSession` — управление постоянным сокетом клиента.
   * Мультиплексирование входящих и исходящих RPC-вызовов по уникальному числовому `id`.
-  * Встроенный **Rate-Limiting (Token Bucket)** для автоматической защиты от флуда и DDoS-атак.
-  * Изолированные контекстные переменные Python `ContextVar` (`current_transport_ctx`, `current_session_ctx`, `current_rpc_id_ctx`, `current_user_ctx`), доступные в любой глубине асинхронного стека.
-  * Реестр колбэков завершения сессии: `session.register_on_close(callback)`.
+  * Встроенный **Rate-Limiting (Token Bucket)** для автоматической защиты от флуда (30 req/s) без накладных расходов.
+  * Изолированные контекстные переменные Python `ContextVar` (`current_user_ctx`, `current_session_ctx`, `current_rpc_id_ctx`, `current_transport_ctx`), доступные в любой глубине асинхронного стека без прокидывания параметров.
+  * Реестр колбэков завершения сессии: `session.register_on_close(callback)` для очистки фоновых задач и транзакций.
+  * Симметричный вызов клиента с сервера: `await session.send_request("client_method", params)`.
+
+* **[core/router.py](../../core/router.py)**:
+  * Декоратор `@http_route(path, methods)` для регистрации прямых HTTP-обработчиков поверх RSGI.
+  * Прием сырых стримов байтов, вебхуков и healthcheck без лишнего оверхеда.
 
 * **[core/upload.py](../../core/upload.py)**:
   * Координатор двухфазной транзакционной загрузки `UploadCoordinator`.
   * Потоковый прием файлов из протокола RSGI с расходом оперативной памяти **O(1) RAM** (`stream_request_to_disk`).
   * Вычисление контрольной суммы SHA-256 на лету в процессе приема байтов.
-  * Автоматический откат (удаление временных файлов) при обрыве соединения.
+  * Автоматический откат (`await tx.rollback()`, удаление временных файлов) при обрыве соединения.
 
 * **[core/security.py](../../core/security.py)**:
   * Надежное хэширование паролей на базе стойкого алгоритма **Argon2id**.
@@ -191,6 +272,9 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 * **[core/lifecycle.py](../../core/lifecycle.py)**:
   * Диспетчер инициализации приложения `@on_startup` (выполняет миграции БД, прогрев кэша и запуск фоновых задач до начала приема трафика).
+
+* **[core/lib/config.py](../../core/lib/config.py)**:
+  * Парсер настроек `settings.yaml` со строгой валидацией и поддержкой переопределения через переменные окружения.
 
 ---
 
@@ -237,9 +321,9 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ---
 
-## 🛠 Создание собственных плагинов и модулей
+## 🛠 Создание собственных плагинов и модулей в папке app
 
-Создать собственный модуль (например, модуль тикетов техподдержки `tickets`) предельно просто:
+Создать собственный модуль (например, модуль тикетов техподдержки `app/tickets/`) предельно просто:
 
 ```python
 # app/tickets/handlers.py
@@ -280,8 +364,34 @@ async def delete_ticket(session, params):
     return {"deleted": True}
 ```
 
+Чтобы модуль заработал, достаточно импортировать его хендлеры в `main.py`:
+```python
+# main.py
+import app.tickets.handlers  # noqa: F401
+```
+
+---
+
+## 💻 Клиентская библиотека (TypeScript/JavaScript)
+
+В репозиторий включен официальный клиент `client/wsrpc.ts`:
+* Поддержка переподключения (`auto-reconnect`).
+* Полноценная типизация TypeScript.
+* Нативная поддержка стриминга мультиретурна (`callStream`).
+* Регистрация методов, вызываемых с сервера (`registerMethod`).
+
+```typescript
+import { BinaryWSRPC } from './wsrpc';
+
+const wsrpc = new BinaryWSRPC('ws://127.0.0.1:8080');
+await wsrpc.connect();
+
+const profile = await wsrpc.call('user.get_profile', {});
+console.log('Пользователь:', profile);
+```
+
 ---
 
 ## 📄 Лицензия
-Проект распространяется под свободной лицензией **MIT**.
+Проект распространяется под свободной лицензией **MIT**.  
 Разрешено коммерческое использование, модификация и распространение.
