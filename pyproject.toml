@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rsgi-wsrpc"
+version = "0.1.0"
+description = "High-performance reactive fullstack Python framework on Rust RSGI (Granian) with symmetric WSRPC (JSON-RPC 2.0) and Two-Phase Commit file streaming."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Alex Titoff", email = "a.tit.off@gmail.com" }
+]
+keywords = ["rsgi", "granian", "wsrpc", "json-rpc", "websocket", "reactive", "fastapi-alternative", "django-alternative"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+dependencies = [
+    "granian>=1.6.0",
+    "orjson>=3.9.0",
+    "pyjwt>=2.8.0",
+    "pyyaml>=6.0.1",
+    "cryptography>=42.0.0",
+    "argon2-cffi>=23.1.0",
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.19.0",
+]
+
+[project.optional-dependencies]
+postgres = [
+    "asyncpg>=0.29.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/a-titoff/rsgi-wsrpc"
+Documentation = "https://github.com/a-titoff/rsgi-wsrpc/blob/main/docs/readme.md"
+Repository = "https://github.com/a-titoff/rsgi-wsrpc.git"
