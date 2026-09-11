@@ -43,6 +43,6 @@ postgres = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/a-titoff/rsgi-wsrpc"
-Documentation = "https://github.com/a-titoff/rsgi-wsrpc/blob/main/docs/readme.md"
-Repository = "https://github.com/a-titoff/rsgi-wsrpc.git"
+Homepage = "https://github.com/atitoff-dotcom/rsgi-wsrpc"
+Documentation = "https://github.com/atitoff-dotcom/rsgi-wsrpc/blob/main/docs/readme.md"
+Repository = "https://github.com/atitoff-dotcom/rsgi-wsrpc.git"

@@ -26,7 +26,7 @@
 
 ### 1. Installation
 ```bash
-git clone https://github.com/a-titoff/rsgi-wsrpc.git
+git clone https://github.com/atitoff-dotcom/rsgi-wsrpc.git
 cd rsgi-wsrpc
 python -m venv .venv
 source .venv/bin/activate
