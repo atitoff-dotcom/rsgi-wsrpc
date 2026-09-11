@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -30,9 +30,9 @@ ENV/
 # Databases & local data
 *.sqlite3
 *.db
-data/
-files/
-logs/
+/data/
+/files/
+/logs/
 
 # IDE & OS
 .idea/
