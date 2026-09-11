@@ -18,6 +18,7 @@
    * [Database Plugin (db)](#1-database-plugin-pluginsdb)
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
    * [Two-Phase File Upload Plugin (files)](#3-two-phase-file-upload-plugin-pluginsfiles)
+   * [Smart Event-Driven Cache Plugin (smart_cache)](#4-smart-event-driven-cache-plugin-pluginssmart_cache)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
 10. [License](#-license)
@@ -356,6 +357,16 @@ The framework includes pre-built and tested system batteries in `app/system/`:
   4. On completion — folder moves atomically to production storage `/files/<folder_hash>/` in 0 milliseconds.
   5. Files are indexed in unified `file_metadata` database table (quotas, original names, MIME types).
   6. Downloads are served directly by **Nginx** with zero Python overhead.
+
+---
+
+### 4. Smart Reactive Cache Plugin (`plugins/smart_cache`)
+* Comprehensive architecture: see **[docs/smart_cache.md](smart_cache.md)** and **[RFC 0001](rfc/0001-smart-cache.md)**.
+* **0 ms Latency Principle & Push Invalidation**:
+  * Instant screen rendering from L1 RAM (or L2 IndexedDB/localStorage) with zero network wait.
+  * Server automatically tracks mutations and pushes `cache.invalidate` impulses or targeted `cache.patch` via `@invalidates(tags=...)`.
+  * Zero blind polling — the WebSocket stays completely silent until data actually changes.
+  * Version handshake (`cache.sync_check`) on reconnect syncs only tags that changed during offline state.
 
 ---
 
