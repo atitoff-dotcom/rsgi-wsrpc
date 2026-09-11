@@ -24,13 +24,14 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from tests.framework.config import TARGETS, CURRENT_TARGET, TargetConfig
-from tests.suites import test_auth, test_smart_cache, test_forum, test_files
+from tests.suites import test_auth, test_smart_cache, test_forum, test_files, test_load
 
 SUITES = {
     "auth": test_auth,
     "smart_cache": test_smart_cache,
     "forum": test_forum,
     "files": test_files,
+    "load": test_load,
 }
 
 # ANSI цвета для красивого терминального вывода

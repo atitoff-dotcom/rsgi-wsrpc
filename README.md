@@ -19,6 +19,7 @@
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
    * [Two-Phase File Upload Plugin (files)](#3-two-phase-file-upload-plugin-pluginsfiles)
    * [Smart Event-Driven Cache Plugin (smart_cache)](#4-smart-event-driven-cache-plugin-pluginssmart_cache)
+   * [Modular Backend Test Framework (tests/)](#5-modular-backend-test-framework-tests)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
 10. [License](#-license)
@@ -367,6 +368,16 @@ The framework includes pre-built and tested system batteries in `app/system/`:
   * Server automatically tracks mutations and pushes `cache.invalidate` impulses or targeted `cache.patch` via `@invalidates(tags=...)`.
   * Zero blind polling — the WebSocket stays completely silent until data actually changes.
   * Version handshake (`cache.sync_check`) on reconnect syncs only tags that changed during offline state.
+
+---
+
+### 5. Modular Backend Test Framework (`tests/`)
+* Comprehensive guide: see **[docs/testing.md](docs/testing.md)**.
+* **Client-Perspective Black-Box Testing**:
+  * Validates the backend exactly as a real frontend client interacts with it (over WebSocket WSRPC and HTTP).
+  * `PersonaManager`: pre-authenticated sessions (`admin`, `user`, `guest`) with automatic local database seeding and RLS bypass.
+  * Native verification of streaming (`stream: true`), push notification interception (`cache.invalidate`, `cache.patch`), and two-phase uploads.
+  * Built-in stress & load testing (`tests/suites/test_load.py`): benchmarks RPS, latency percentiles (p50/p95/p99), and broadcast fan-out reliability.
 
 ---
 
