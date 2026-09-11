@@ -381,6 +381,15 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 
 ---
 
+### 6. Deterministic Tabular Compression (`app/system/tabular.py`)
+* Comprehensive guide: see **[docs/tabular_compression.md](tabular_compression.md)** and **[RFC 0002](rfc/0002-packed-tabular-payloads.md)**.
+* **50–70% Bandwidth Savings & GC Relief**:
+  * Eliminates key duplication in collection responses by separating field schema from row values (`$tabular: true`).
+  * Seamless client-side unpacking in `wsrpc.ts` ensures zero friction for frontend UI components.
+  * Enables passing raw database cursor tuples directly to network serialization, bypassing Python dictionary allocation altogether.
+
+---
+
 ## 🛠 Creating Custom Plugins & Modules in the app Directory
 
 Creating a custom feature module (e.g. support ticket system `app/tickets/`) is straightforward:

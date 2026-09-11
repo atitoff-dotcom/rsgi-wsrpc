@@ -116,10 +116,11 @@ class TestClient:
         if method:
             self._notifications.put_nowait(data)
 
-    async def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0) -> Any:
+    async def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout: float = 10.0, raw: bool = False) -> Any:
         """
         Вызывает RPC-метод и ожидает финальный результат (result).
         При ошибке вызывает RPCClientError.
+        Если raw=False (по умолчанию), автоматически распаковывает $tabular ответы.
         """
         await self.connect()
         req_id = self._next_id
@@ -138,7 +139,14 @@ class TestClient:
 
         try:
             await self._ws.send_bytes(orjson.dumps(payload))
-            return await asyncio.wait_for(fut, timeout=timeout)
+            res = await asyncio.wait_for(fut, timeout=timeout)
+            if raw:
+                return res
+            try:
+                from app.system.tabular import unpack_tabular
+                return unpack_tabular(res)
+            except ImportError:
+                return res
         finally:
             self._pending_requests.pop(req_id, None)
 
