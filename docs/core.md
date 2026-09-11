@@ -351,26 +351,252 @@ upload_dir = settings.storage.get("upload_dir", "/files")
 
 ## 8. TypeScript/JavaScript Client: `client/wsrpc.ts`
 
-Official `BinaryWSRPC` client for browsers and Node.js:
+The official `BinaryWSRPC` client provides a reactive environment for connecting to the WSRPC server in modern web applications (Svelte, React, Vue, Angular, or Vanilla JS/Node.js).
+
+### Client Capabilities:
+* **Single Persistent Socket** for all RPC transactions, streams, and server events.
+* **Automatic Reconnection** upon network disruption while preserving subscriptions.
+* **Native Multi-Return (`callStream`)**: Live progress indicators, streamed computations, and log streaming without secondary WebSockets.
+* **Server Push & Event Notifications** (`rpc.on(...)`).
+* **Symmetric RPC**: The server can invoke client-side methods and await the user's return value (`rpc.registerMethod(...)`).
+* **Reactive State Stores**: Reactive network state tracking (`wsConnected`, `wsStatus`).
+
+---
+
+### 1. Connection & Network Lifecycle Management
 
 ```typescript
-import { BinaryWSRPC } from './wsrpc';
+import { BinaryWSRPC, wsConnected, wsStatus } from './wsrpc';
 
-const wsrpc = new BinaryWSRPC('wss://api.example.com/ws');
-await wsrpc.connect();
+// Instantiate client (or import singleton: import { rpc } from './wsrpc')
+export const rpc = new BinaryWSRPC('wss://api.example.com/ws');
 
-// 1. Regular method call
-const result = await wsrpc.call('calculator.add', { a: 10, b: 20 });
-console.log('Sum:', result.sum);
+// Set auto-reconnect interval (in seconds). Default is 3s (0 to disable)
+rpc.reconnectWs = 3;
 
-// 2. Method call with streaming progress chunks
-await wsrpc.callStream('reports.generate', {}, (chunk) => {
-    console.log(`Progress: ${chunk.percent}% — ${chunk.status}`);
-});
+// Connection lifecycle hooks
+rpc.onConnect = () => {
+    console.log('[App] WebSocket connection ready');
+};
 
-// 3. Register client method callable by server
-wsrpc.registerMethod('ui.request_confirmation', async (params) => {
-    const ok = window.confirm(params.message);
-    return { confirmed: ok };
+rpc.onStatusChange = (isConnected: boolean) => {
+    console.log('[App] Network state:', isConnected ? 'ONLINE' : 'OFFLINE');
+};
+
+// Initiate connection
+await rpc.connect();
+```
+
+#### Reactive Offline Banner in UI:
+```typescript
+// Svelte:
+// {#if !$wsConnected}
+//    <div class="offline-banner">Connection lost. Reconnecting to server...</div>
+// {/if}
+
+// React / Vue / Vanilla JS:
+wsConnected.subscribe((connected) => {
+    document.getElementById('status-indicator').textContent = connected ? 'Online' : 'Reconnecting...';
 });
 ```
+
+---
+
+### 2. Standard RPC Call (`call`)
+
+`rpc.call<T>(method, params, timeoutMs)` returns a typed `Promise<T>`:
+
+```typescript
+interface UserProfile {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+}
+
+try {
+    // Invoke typed RPC method
+    const profile = await rpc.call<UserProfile>('user.get_profile', { user_id: 42 });
+    console.log(`Welcome back, ${profile.name}! Role: ${profile.role}`);
+} catch (error) {
+    // If the server raises RPCError("..."), 
+    // it will be caught here with a clean, descriptive message
+    console.error('Failed to retrieve user profile:', error);
+}
+```
+
+---
+
+### 3. Multi-Return: Progress Streaming (`callStream`)
+
+A hallmark feature of `rsgi-wsrpc`: the client calls a long-running process (e.g. database dump, PDF compilation, AI model evaluation), the server emits sequential chunks tagged with `stream: true`, and the final return payload resolves the primary promise!
+
+#### Backend Implementation (Python):
+```python
+# app/reports/handlers.py
+@rpc_method("reports.generate")
+async def generate_report(session, params):
+    rpc_id = params.get("rpc_id")
+    total_stages = 4
+    
+    stages = [
+        "Analyzing historical transactions",
+        "Calculating tax withholdings",
+        "Generating summary charts",
+        "Compiling final PDF bundle"
+    ]
+    
+    for i, title in enumerate(stages, 1):
+        await asyncio.sleep(1.0) # Work simulation
+        
+        # Emit progress chunk to active client request
+        await session.send_stream_chunk(rpc_id, {
+            "stage": i,
+            "total_stages": total_stages,
+            "percent": int((i / total_stages) * 100),
+            "message": title
+        })
+        
+    # Final return completes the RPC request
+    return {
+        "status": "ready",
+        "download_url": "/files/reports/report_q3_2026.pdf",
+        "file_size": 2481020
+    }
+```
+
+#### Frontend Consumer (TypeScript):
+```typescript
+interface ProgressChunk {
+    stage: number;
+    total_stages: number;
+    percent: number;
+    message: string;
+}
+
+interface ReportResult {
+    status: string;
+    download_url: string;
+    file_size: number;
+}
+
+// Invoke streamed calculation and observe intermediate chunks
+const finalReport = await rpc.callStream<ReportResult>(
+    'reports.generate',
+    { period: '2026-Q3', format: 'pdf' },
+    (chunk: ProgressChunk) => {
+        // Callback invoked on each intermediate progress packet:
+        console.log(`[${chunk.percent}%] Step ${chunk.stage}/${chunk.total_stages}: ${chunk.message}`);
+        
+        // Update UI progress bar
+        updateProgressBar(chunk.percent, chunk.message);
+    }
+);
+
+// Executed only after the entire operation completes successfully
+console.log('Report available for download:', finalReport.download_url);
+window.open(finalReport.download_url, '_blank');
+```
+
+---
+
+### 4. Receiving Notifications & Server Push (`on`)
+
+The server can push unsolicited events to clients at any time (e.g., chat messages, order status changes, cache invalidation events, or system-wide maintenance notices).
+
+#### Server Dispatcher (Python):
+```python
+# Unicast notification to a specific session:
+await session.send_request("notification.alert", {
+    "level": "warning",
+    "text": "Server maintenance scheduled in 5 minutes."
+})
+
+# Multicast / Broadcast across all active connected sessions (app/system/broadcast.py):
+from app.system.broadcast import broadcast_event
+
+await broadcast_event("forum.new_topic", {
+    "topic_id": 158,
+    "title": "Announcing rsgi-wsrpc 1.0!",
+    "author": "Alex"
+})
+```
+
+#### Client Listener Subscription (TypeScript):
+```typescript
+// 1. Subscribe to system alerts
+rpc.on('notification.alert', (data) => {
+    uiNotification.show({
+        type: data.level,
+        message: data.text,
+        duration: 10000
+    });
+});
+
+// 2. Real-time feed synchronization
+// on() returns an unsubscription callback:
+const unsubscribe = rpc.on('forum.new_topic', (topic) => {
+    console.log('New forum discussion:', topic.title);
+    topicsStore.update(list => [topic, ...list]);
+});
+
+// Component unmount / cleanup (Svelte onDestroy / React useEffect):
+// onDestroy(unsubscribe); // or useEffect(() => () => unsubscribe(), [])
+
+// 3. Handle idle session expiration
+rpc.on('session.expired', () => {
+    uiDialog.alert('Your session has timed out due to inactivity. Please sign in again.');
+    userStore.set(null);
+    openLoginModal();
+});
+```
+
+---
+
+### 5. Symmetric RPC: Server Awaits Client Actions
+
+Under WSRPC, server and client are peers. The server can invoke a registered client method and **await the client's return value**:
+
+#### Frontend Registration:
+```typescript
+// Register client-side method ui.confirm
+rpc.registerMethod('ui.confirm', async (params: { title: string; message: string }) => {
+    // Render confirmation modal dialog
+    const isUserAgreed = await openConfirmationDialog({
+        title: params.title,
+        message: params.message
+    });
+
+    // Return value is transmitted back to the server!
+    return { confirmed: isUserAgreed };
+});
+```
+
+#### Server Invocation (Python):
+```python
+@rpc_method("wallet.withdraw")
+async def withdraw_money(session: JsonRpcSession, params: dict):
+    amount = params.get("amount")
+    account = params.get("account")
+    
+    # Server requests interactive confirmation from the user's browser
+    try:
+        response = await session.send_request(
+            method="ui.confirm",
+            params={
+                "title": "Confirm Withdrawal",
+                "message": f"Authorize withdrawal of ${amount} to account {account}?"
+            },
+            timeout=30.0 # Wait up to 30 seconds for user action
+        )
+    except TimeoutError:
+        raise RPCError("Confirmation timed out")
+
+    if not response.get("result", {}).get("confirmed"):
+        raise RPCError("Transaction declined by user")
+
+    # User confirmed — proceed with fund transfer
+    await execute_withdrawal(amount, account)
+    return {"status": "success", "transferred": amount}
+```
+

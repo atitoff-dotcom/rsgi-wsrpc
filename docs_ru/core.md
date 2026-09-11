@@ -351,26 +351,252 @@ upload_dir = settings.storage.get("upload_dir", "/files")
 
 ## 8. Клиент TypeScript/JavaScript: `client/wsrpc.ts`
 
-Официальный клиент `BinaryWSRPC` для браузера и Node.js:
+Официальный клиент `BinaryWSRPC` предоставляет полнофункциональную среду для работы с реактивным WSRPC-сервером в современных веб-приложениях (Svelte, React, Vue, Angular или чистый Vanilla JS/Node.js).
+
+### Возможности клиента:
+* **Единый постоянный сокет** для всех RPC-запросов и нотификаций.
+* **Автоматическое переподключение** при обрыве сети с сохранением подписок.
+* **Нативный мультиретурн (`callStream`)**: прогресс-бары, потоковая генерация данных и живые логи без создания дополнительных сокетов.
+* **Прием нотификаций (Server Push)** и широковещательных рассылок (`rpc.on(...)`).
+* **Симметричный RPC**: сервер может вызывать клиентские функции и ожидать результат (`rpc.registerMethod(...)`).
+* **Реактивные сторы состояния**: реактивное отслеживание статуса сети (`wsConnected`, `wsStatus`).
+
+---
+
+### 1. Подключение и управление состоянием сети
 
 ```typescript
-import { BinaryWSRPC } from './wsrpc';
+import { BinaryWSRPC, wsConnected, wsStatus } from './wsrpc';
 
-const wsrpc = new BinaryWSRPC('wss://api.example.com/ws');
-await wsrpc.connect();
+// Создаем экземпляр клиента (или используем глобальный синглтон import { rpc } from './wsrpc')
+export const rpc = new BinaryWSRPC('wss://api.example.com/ws');
 
-// 1. Обычный вызов метода
-const result = await wsrpc.call('calculator.add', { a: 10, b: 20 });
-console.log('Сумма:', result.sum);
+// Настройка интервала авто-реконнекта (в секундах). По умолчанию 3 сек. (0 - отключить)
+rpc.reconnectWs = 3;
 
-// 2. Вызов со стримингом промежуточных результатов
-await wsrpc.callStream('reports.generate', {}, (chunk) => {
-    console.log(`Прогресс: ${chunk.percent}% — ${chunk.status}`);
-});
+// Триггеры событий соединения
+rpc.onConnect = () => {
+    console.log('[App] Соединение с сервером готово к работе');
+};
 
-// 3. Регистрация метода на клиенте для вызова сервером
-wsrpc.registerMethod('ui.request_confirmation', async (params) => {
-    const ok = window.confirm(params.message);
-    return { confirmed: ok };
+rpc.onStatusChange = (isConnected: boolean) => {
+    console.log('[App] Сетевой статус изменился:', isConnected ? 'ОНЛАЙН' : 'ОФФЛАЙН');
+};
+
+// Подключаемся
+await rpc.connect();
+```
+
+#### Реактивное отображение плашки «Нет связи» в UI:
+```typescript
+// Svelte:
+// {#if !$wsConnected}
+//    <div class="offline-banner">Потеряно соединение с сервером. Восстановление связи...</div>
+// {/if}
+
+// React / Vue / Vanilla JS:
+wsConnected.subscribe((connected) => {
+    document.getElementById('status-indicator').textContent = connected ? 'Онлайн' : 'Переподключение...';
 });
 ```
+
+---
+
+### 2. Обычный RPC-вызов (`call`)
+
+Метод `rpc.call<T>(method, params, timeoutMs)` возвращает строгий `Promise<T>`:
+
+```typescript
+interface UserProfile {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+}
+
+try {
+    // Вызов RPC с указанием типа ответа
+    const profile = await rpc.call<UserProfile>('user.get_profile', { user_id: 42 });
+    console.log(`Привет, ${profile.name}! Ваша роль: ${profile.role}`);
+} catch (error) {
+    // Если на бэкенде было выброшено raise RPCError("..."), 
+    // ошибка будет перехвачена здесь с понятным сообщением
+    console.error('Ошибка получения профиля:', error);
+}
+```
+
+---
+
+### 3. Мультиретурн: Стриминг прогресса (`callStream`)
+
+Главная киллер-фича `rsgi-wsrpc`: клиент вызывает одну тяжелую операцию (экспорт базы, обучение модели, рендеринг видео, генерация PDF), сервер шлет серию промежуточных ответов с пометкой `stream: true`, а финальный результат разрешает основной промис!
+
+#### Реализация на бэкенде (Python):
+```python
+# app/reports/handlers.py
+@rpc_method("reports.generate")
+async def generate_report(session, params):
+    rpc_id = params.get("rpc_id")
+    total_stages = 4
+    
+    stages = [
+        "Анализ транзакций за период",
+        "Расчет налоговых ставок и вычетов",
+        "Формирование сводных графиков",
+        "Сборка финального PDF-документа"
+    ]
+    
+    for i, title in enumerate(stages, 1):
+        await asyncio.sleep(1.0) # Выполнение этапа
+        
+        # Отправляем чанк прогресса клиенту в активный RPC-запрос
+        await session.send_stream_chunk(rpc_id, {
+            "stage": i,
+            "total_stages": total_stages,
+            "percent": int((i / total_stages) * 100),
+            "message": title
+        })
+        
+    # Финальный результат завершает RPC-вызов
+    return {
+        "status": "ready",
+        "download_url": "/files/reports/report_q3_2026.pdf",
+        "file_size": 2481020
+    }
+```
+
+#### Обработка на фронтенде (TypeScript):
+```typescript
+interface ProgressChunk {
+    stage: number;
+    total_stages: number;
+    percent: number;
+    message: string;
+}
+
+interface ReportResult {
+    status: string;
+    download_url: string;
+    file_size: number;
+}
+
+// Запускаем генерацию и подписываемся на прогресс
+const finalReport = await rpc.callStream<ReportResult>(
+    'reports.generate',
+    { period: '2026-Q3', format: 'pdf' },
+    (chunk: ProgressChunk) => {
+        // Колбэк вызывается при каждом промежуточном чанке с сервера:
+        console.log(`[${chunk.percent}%] Этап ${chunk.stage}/${chunk.total_stages}: ${chunk.message}`);
+        
+        // Обновляем шкалу прогресса в UI
+        updateProgressBar(chunk.percent, chunk.message);
+    }
+);
+
+// Сюда выполнение попадет только после успешного завершения всей операции
+console.log('Отчет готов к скачиванию:', finalReport.download_url);
+window.open(finalReport.download_url, '_blank');
+```
+
+---
+
+### 4. Получение нотификаций и Server Push (`on`)
+
+Сервер может в любой момент отправить событие клиенту без предварительного запроса (например, новое сообщение в чате, изменение статуса заявки, инвалидация кэша или системное оповещение).
+
+#### Отправка с сервера (Python):
+```python
+# Оповещение конкретной сессии:
+await session.send_request("notification.alert", {
+    "level": "warning",
+    "text": "Уважаемый пользователь, через 5 минут сервер уйдет на техобслуживание."
+})
+
+# Широковещательный broadcast на всех пользователей (app/system/broadcast.py):
+from app.system.broadcast import broadcast_event
+
+await broadcast_event("forum.new_topic", {
+    "topic_id": 158,
+    "title": "Релиз rsgi-wsrpc 1.0!",
+    "author": "Alex"
+})
+```
+
+#### Прием и подписка на клиенте (TypeScript):
+```typescript
+// 1. Подписка на системные оповещения
+rpc.on('notification.alert', (data) => {
+    uiNotification.show({
+        type: data.level,
+        message: data.text,
+        duration: 10000
+    });
+});
+
+// 2. Реактивное обновление ленты форума / чата
+// Метод on() возвращает функцию для легкой отписки:
+const unsubscribe = rpc.on('forum.new_topic', (topic) => {
+    console.log('Новая тема на форуме:', topic.title);
+    topicsStore.update(currentList => [topic, ...currentList]);
+});
+
+// В компоненте Svelte / React / Vue при размонтировании (cleanup):
+// onDestroy(unsubscribe); // или useEffect(() => () => unsubscribe(), [])
+
+// 3. Обработка завершения сессии по неактивности
+rpc.on('session.expired', () => {
+    uiDialog.alert('Ваша сессия завершена по неактивности. Пожалуйста, авторизуйтесь снова.');
+    userStore.set(null);
+    openLoginModal();
+});
+```
+
+---
+
+### 5. Симметричный RPC: Сервер запрашивает действие у клиента
+
+В архитектуре WSRPC сервер и клиент равноправны. Сервер может вызвать зарегистрированный метод на стороне клиента и **дождаться возвращаемого клиентом значения**:
+
+#### Регистрация метода подтверждения на фронтенде:
+```typescript
+// Регистрируем клиентский метод ui.confirm
+rpc.registerMethod('ui.confirm', async (params: { title: string; message: string }) => {
+    // Показываем пользователю модальное окно с кнопками "Подтвердить" / "Отмена"
+    const isUserAgreed = await openConfirmationDialog({
+        title: params.title,
+        message: params.message
+    });
+
+    // Возвращаем результат серверу!
+    return { confirmed: isUserAgreed };
+});
+```
+
+#### Вызов с сервера (Python):
+```python
+@rpc_method("wallet.withdraw")
+async def withdraw_money(session: JsonRpcSession, params: dict):
+    amount = params.get("amount")
+    account = params.get("account")
+    
+    # Сервер запрашивает интерактивное подтверждение у браузера пользователя
+    try:
+        response = await session.send_request(
+            method="ui.confirm",
+            params={
+                "title": "Подтверждение перевода",
+                "message": f"С вашего счета будет списано {amount} ₽ на счет {account}. Продолжить?"
+            },
+            timeout=30.0 # Ждем ответа пользователя до 30 секунд
+        )
+    except TimeoutError:
+        raise RPCError("Время ожидания подтверждения истекло")
+
+    if not response.get("result", {}).get("confirmed"):
+        raise RPCError("Операция отменена пользователем")
+
+    # Пользователь нажал "Подтвердить" — выполняем списание средств
+    await execute_withdrawal(amount, account)
+    return {"status": "success", "transferred": amount}
+```
+

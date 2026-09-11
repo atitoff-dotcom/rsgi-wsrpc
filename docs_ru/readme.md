@@ -374,21 +374,43 @@ import app.tickets.handlers  # noqa: F401
 
 ## 💻 Клиентская библиотека (TypeScript/JavaScript)
 
-В репозиторий включен официальный клиент `client/wsrpc.ts`:
-* Поддержка переподключения (`auto-reconnect`).
-* Полноценная типизация TypeScript.
-* Нативная поддержка стриминга мультиретурна (`callStream`).
-* Регистрация методов, вызываемых с сервера (`registerMethod`).
+В репозиторий включен официальный легковесный клиент `client/wsrpc.ts` с нулевыми внешними зависимостями:
 
 ```typescript
-import { BinaryWSRPC } from './wsrpc';
+import { BinaryWSRPC, wsConnected, wsStatus } from './wsrpc';
 
-const wsrpc = new BinaryWSRPC('ws://127.0.0.1:8080');
-await wsrpc.connect();
+const rpc = new BinaryWSRPC('wss://api.example.com/ws');
+await rpc.connect();
 
-const profile = await wsrpc.call('user.get_profile', {});
-console.log('Пользователь:', profile);
+// 1. Обычный типизированный RPC-вызов
+const profile = await rpc.call<UserProfile>('user.get_profile', { user_id: 42 });
+console.log('Пользователь:', profile.name);
+
+// 2. Мультиретурн: стриминг прогресса выполнения тяжелой операции
+const report = await rpc.callStream<ReportResult>(
+    'reports.generate', 
+    { period: '2026-Q3' }, 
+    (chunk) => {
+        console.log(`[${chunk.percent}%] Прогресс: ${chunk.message}`);
+        updateProgressBar(chunk.percent); // Живое обновление UI!
+    }
+);
+console.log('Отчет готов:', report.download_url);
+
+// 3. Получение нотификаций и Server Push (события от сервера)
+const unsubscribe = rpc.on('chat.new_message', (msg) => {
+    console.log(`[${msg.author}]: ${msg.text}`);
+    messagesList.update(items => [...items, msg]);
+});
+
+// 4. Симметричный RPC: сервер запрашивает подтверждение у браузера
+rpc.registerMethod('ui.confirm', async (params) => {
+    const isApproved = await showConfirmationModal(params.title, params.message);
+    return { confirmed: isApproved }; // Возвращаем ответ серверу!
+});
 ```
+
+> 📖 **Исчерпывающие примеры интеграции с UI-фреймворками (Svelte, React, Vue), обработки ошибок и отписок см. в [docs_ru/core.md](core.md#8-клиент-typescriptjavascript-clientwsrpcts)**.
 
 ---
 

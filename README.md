@@ -374,21 +374,43 @@ import app.tickets.handlers  # noqa: F401
 
 ## 💻 Client Library (TypeScript/JavaScript)
 
-The repository provides the official `client/wsrpc.ts` client:
-* Full auto-reconnection and exponential backoff.
-* Type-safe TypeScript signatures.
-* Native multi-return streaming (`callStream`).
-* Client-side RPC registration (`registerMethod`).
+The framework includes the official zero-dependency client `client/wsrpc.ts`:
 
 ```typescript
-import { BinaryWSRPC } from './wsrpc';
+import { BinaryWSRPC, wsConnected, wsStatus } from './wsrpc';
 
-const wsrpc = new BinaryWSRPC('ws://127.0.0.1:8080');
-await wsrpc.connect();
+const rpc = new BinaryWSRPC('wss://api.example.com/ws');
+await rpc.connect();
 
-const profile = await wsrpc.call('user.get_profile', {});
-console.log('User profile:', profile);
+// 1. Standard typed RPC call
+const profile = await rpc.call<UserProfile>('user.get_profile', { user_id: 42 });
+console.log('User profile:', profile.name);
+
+// 2. Multi-return: Progress streaming for long-running workloads
+const report = await rpc.callStream<ReportResult>(
+    'reports.generate', 
+    { period: '2026-Q3' }, 
+    (chunk) => {
+        console.log(`[${chunk.percent}%] Progress: ${chunk.message}`);
+        updateProgressBar(chunk.percent); // Real-time UI progress update!
+    }
+);
+console.log('Report ready:', report.download_url);
+
+// 3. Receive unsolicited Server Push notifications
+const unsubscribe = rpc.on('chat.new_message', (msg) => {
+    console.log(`[${msg.author}]: ${msg.text}`);
+    messagesList.update(items => [...items, msg]);
+});
+
+// 4. Symmetric RPC: Server initiates an interactive prompt on the client
+rpc.registerMethod('ui.confirm', async (params) => {
+    const isApproved = await showConfirmationModal(params.title, params.message);
+    return { confirmed: isApproved }; // Transmitted back to the server!
+});
 ```
+
+> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](core.md#8-typescriptjavascript-client-clientwsrpcts)**.
 
 ---
 

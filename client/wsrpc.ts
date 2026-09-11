@@ -1,9 +1,28 @@
-import { browser } from '$app/environment';
-import { writable } from 'svelte/store';
+const isBrowser = typeof window !== 'undefined';
 
-// Реактивные сторы состояния WebSocket соединения
-export const wsConnected = writable<boolean>(false);
-export const wsStatus = writable<'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
+/**
+ * Легковесный реактивный стор с нулевыми зависимостями.
+ * Полностью совместим со стандартом Svelte store contract ($store),
+ * React (useSyncExternalStore), Vue и Vanilla JS (subscribe).
+ */
+type Listener<T> = (val: T) => void;
+export class SimpleStore<T> {
+    private value: T;
+    private listeners = new Set<Listener<T>>();
+    constructor(val: T) { this.value = val; }
+    get(): T { return this.value; }
+    set(val: T) { this.value = val; this.listeners.forEach(fn => fn(val)); }
+    update(updater: (val: T) => T) { this.set(updater(this.value)); }
+    subscribe(fn: Listener<T>): () => void {
+        fn(this.value);
+        this.listeners.add(fn);
+        return () => { this.listeners.delete(fn); };
+    }
+}
+
+// Реактивные сторы состояния соединения
+export const wsConnected = new SimpleStore<boolean>(false);
+export const wsStatus = new SimpleStore<'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
 
 // Описание структуры для отслеживания ожидающих ответа RPC-запросов (Promises)
 interface PendingRequest {
@@ -63,7 +82,7 @@ export class BinaryWSRPC {
  
     constructor(url?: string) {
         this.url = url || getWsUrl();
-        if (browser) {
+        if (isBrowser) {
             console.log('[WSRPC] Клиент WSRPC инициализирован для URL:', this.url);
         }
     }
@@ -73,7 +92,7 @@ export class BinaryWSRPC {
      * Возвращает Promise, который разрешается при успешном подключении (onopen).
      */
     connect(url?: string): Promise<void> {
-        if (!browser) return Promise.resolve();
+        if (!isBrowser) return Promise.resolve();
         if (this.status === 'CONNECTED' && this.ws && this.ws.readyState === WebSocket.OPEN) {
             return Promise.resolve();
         }
@@ -216,6 +235,23 @@ export class BinaryWSRPC {
     }
 
     /**
+     * Алиас для register (декларативное имя)
+     */
+    registerMethod(rpcName: string, handlerFunc: Function) {
+        this.register(rpcName, handlerFunc);
+    }
+
+    /**
+     * Подписка на событие / нотификацию от сервера с возвратом функции отписки
+     */
+    on(event: string, handler: (data: any) => void): () => void {
+        this.register(event, handler);
+        return () => {
+            this.serverMethods.delete(event);
+        };
+    }
+
+    /**
      * Отправка запроса к серверу. Возвращает Promise с результатом.
      */
     async request(method: string, params: any = {}, timeoutMs = 15000): Promise<any> {
@@ -253,8 +289,54 @@ export class BinaryWSRPC {
     /**
      * Совместимость со старым rpc.call
      */
-    call<T = any>(rpcName: string, args: any = {}): Promise<T> {
-        return this.request(rpcName, args);
+    call<T = any>(rpcName: string, args: any = {}, timeoutMs = 15000): Promise<T> {
+        return this.request(rpcName, args, timeoutMs);
+    }
+
+    /**
+     * Вызов метода со стримингом прогресса (мультиретурн).
+     * Вызывает onChunkCallback для каждого промежуточного чанка (stream: true)
+     * и возвращает Promise, который резолвится финальным результатом операции.
+     */
+    async callStream<T = any>(
+        rpcName: string,
+        args: any = {},
+        onChunkCallback?: (chunk: any) => void,
+        timeoutMs = 60000
+    ): Promise<T> {
+        if (this.status !== 'CONNECTED' || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            try {
+                await this.connect();
+            } catch (err) {
+                return Promise.reject(err);
+            }
+        }
+
+        return new Promise((resolve, reject) => {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                return reject(new Error('WSRPC: Not connected to server'));
+            }
+
+            const rpcId = this.idCounter++;
+            const payload = { jsonrpc: '2.0', method: rpcName, params: args, id: rpcId };
+
+            if (onChunkCallback) {
+                this.streamListeners.set(rpcId, onChunkCallback);
+            }
+
+            const timeoutId = window.setTimeout(() => {
+                console.warn(`[WSRPC] ⏰ Таймаут стрим-запроса [ID: ${rpcId}] -> "${rpcName}"`);
+                const pending = this.pendingRequests.get(rpcId);
+                if (pending) {
+                    pending.reject(new Error(`Timeout for ${rpcName}`));
+                    this.pendingRequests.delete(rpcId);
+                    this.streamListeners.delete(rpcId);
+                }
+            }, timeoutMs);
+
+            this.pendingRequests.set(rpcId, { resolve, reject, timeoutId });
+            this.ws.send(JSON.stringify(payload));
+        });
     }
 
     /**
@@ -299,6 +381,7 @@ export class BinaryWSRPC {
             if (!pending) return;
             clearTimeout(pending.timeoutId);
             this.pendingRequests.delete(rpcId);
+            this.streamListeners.delete(rpcId);
 
             if ('error' in data) {
                 pending.reject(data.error.message || data.error);
