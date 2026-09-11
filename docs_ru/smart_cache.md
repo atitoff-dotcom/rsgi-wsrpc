@@ -68,26 +68,31 @@
 
 ### Декоратор `@invalidates`
 
-Декоратор вешается на любой мутирующий RPC-метод. Теги могут быть как фиксированным списком, так и динамической функцией от входных параметров и результата:
+Декоратор вешается на любой мутирующий RPC-метод. Поддерживает декларативные строковые шаблоны с автоматической подстановкой из входных параметров `params` и результата `result`:
 
 ```python
 from core.session import rpc_method
 from app.system.smart_cache import invalidates
 
-# Статический тег: при создании темы инвалидируется общий список тем
+# Статические и динамические строковые шаблоны:
 @rpc_method("forum.create_topic")
-@invalidates(tags=["forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}"])
 async def create_topic(session, params):
     ...
-    return {"topic_id": new_id}
+    return {"id": topic.id, "category_id": category_id}
 
-# Динамические теги: инвалидирует как список тем, так и конкретную тему по ID
+# Инвалидация списка тем, категории и конкретной темы по ID:
 @rpc_method("forum.create_reply")
-@invalidates(tags=lambda p, res: [f"topic:{p.get('topic_id')}", "forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
 async def create_reply(session, params):
-    topic_id = params.get("topic_id")
     ...
-    return {"reply_id": reply.id}
+    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
+
+# Поддержка альтернативных плейсхолдеров {topic_id|id}:
+@rpc_method("forum.delete_topic")
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id|id}"])
+async def delete_topic(session, params):
+    ...
 ```
 
 ### Точечные патчи `patch_tag`

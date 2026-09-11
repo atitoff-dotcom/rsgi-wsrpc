@@ -6,6 +6,7 @@ Smart Cache Engine: Реестр версий сущностей, инвалид
 
 import asyncio
 import inspect
+import re
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -201,49 +202,130 @@ async def patch_tag(
     return new_version
 
 
+def _resolve_tag_template(template: str, context: Dict[str, Any]) -> Optional[str]:
+    """
+    Разрешает плейсхолдеры вида {var}, {obj.field} или {a|b} в шаблоне тега.
+    Примеры:
+      'forum.topics' -> 'forum.topics'
+      'forum.category.{category_id}' -> 'forum.category.5'
+      'forum.topic.{topic_id|id}' -> 'forum.topic.42'
+      'articles.{slug}' -> 'articles.tomato-guide'
+    Если какой-либо обязательный плейсхолдер не найден или пуст, возвращает None (тег пропускается).
+    """
+    if not isinstance(template, str):
+        return None
+    if "{" not in template:
+        return template
+
+    pattern = re.compile(r"\{([a-zA-Z0-9_.:|-]+)\}")
+    matches = pattern.findall(template)
+    formatted = template
+
+    for var_expr in matches:
+        candidates = [c.strip() for c in var_expr.split("|")]
+        val = None
+        for c in candidates:
+            curr = context
+            for part in c.split("."):
+                if isinstance(curr, dict) and part in curr:
+                    curr = curr[part]
+                elif hasattr(curr, part):
+                    curr = getattr(curr, part)
+                else:
+                    curr = None
+                    break
+            if curr is not None and curr != "":
+                val = curr
+                break
+
+        if val is None or val == "":
+            return None
+
+        formatted = formatted.replace(f"{{{var_expr}}}", str(val))
+
+    return formatted
+
+
 def invalidates(
-    tags: Union[List[str], Callable[..., List[str]]],
+    tags: Union[List[str], str, Callable[..., List[str]]],
     exclude_current: bool = False,
     reason: str = "mutation",
 ):
     """
     Декоратор для RPC-хендлеров, автоматически инвалидирующий кэш при успешном выполнении.
+    Поддерживает декларативные строковые шаблоны с автоматической подстановкой из params и result.
 
     Примеры использования:
     @rpc_method("forum.create_topic")
-    @invalidates(tags=["forum.topics"])
+    @invalidates(tags=["forum.topics", "forum.category.{category_id}"])
     async def create_topic(session, params): ...
 
     @rpc_method("forum.create_reply")
-    @invalidates(tags=lambda p, res: [f"topic:{p.get('topic_id')}", "forum.topics"])
+    @invalidates(tags=["forum.topics", "forum.topic.{topic_id}"])
     async def create_reply(session, params): ...
+
+    @rpc_method("forum.delete_topic")
+    @invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id|id}"])
+    async def delete_topic(session, params): ...
+
+    @rpc_method("articles.save")
+    @invalidates(tags=["articles.list", "articles.{slug}"])
+    async def save_article(session, params): ...
     """
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
             result = await func(*args, **kwargs)
 
-            # Вычисляем список тегов для инвалидации
-            resolved_tags: List[str] = []
+            # Извлекаем params из аргументов хендлера (сессия обычно args[0], params args[1])
+            params = {}
+            if len(args) > 1 and isinstance(args[1], dict):
+                params = args[1]
+            elif kwargs.get("params") and isinstance(kwargs["params"], dict):
+                params = kwargs["params"]
+            elif len(args) > 0 and isinstance(args[0], dict):
+                params = args[0]
+
+            # Формируем контекст разрешения шаблонов из params и result
+            context: Dict[str, Any] = {"params": params, "result": result}
+            if isinstance(params, dict):
+                for k, v in params.items():
+                    if k not in context:
+                        context[k] = v
+            if isinstance(result, dict):
+                for k, v in result.items():
+                    context[f"result.{k}"] = v
+                    if k not in context:
+                        context[k] = v
+
+            # Вычисляем список сырых тегов для инвалидации
+            raw_tags: List[str] = []
             if callable(tags):
                 try:
                     sig = inspect.signature(tags)
-                    # Извлекаем params из первого/второго аргумента
-                    params = args[1] if len(args) > 1 else kwargs.get("params", {})
                     if len(sig.parameters) >= 2:
                         res_tags = tags(params, result)
                     else:
                         res_tags = tags(params)
 
                     if isinstance(res_tags, list):
-                        resolved_tags = res_tags
+                        raw_tags = res_tags
                     elif isinstance(res_tags, str):
-                        resolved_tags = [res_tags]
+                        raw_tags = [res_tags]
                 except Exception as e:
                     logger.error(f"[SmartCache] Ошибка вычисления тегов инвалидации в {func.__name__}: {e}")
             elif isinstance(tags, list):
-                resolved_tags = list(tags)
+                raw_tags = list(tags)
             elif isinstance(tags, str):
-                resolved_tags = [tags]
+                raw_tags = [tags]
+
+            # Разрешаем строковые шаблоны тегов
+            resolved_tags: List[str] = []
+            seen = set()
+            for t in raw_tags:
+                tag_str = _resolve_tag_template(t, context)
+                if tag_str and tag_str not in seen:
+                    seen.add(tag_str)
+                    resolved_tags.append(tag_str)
 
             if resolved_tags:
                 await invalidate_tags(

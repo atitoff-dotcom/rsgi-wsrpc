@@ -74,3 +74,33 @@ async def test_live_cache_invalidation_notification():
             assert "versions" in params
             assert test_tag in params["versions"]
             assert params["versions"][test_tag] >= 2
+
+
+async def test_decorator_template_invalidation():
+    """
+    Проверяет декларативный декоратор @invalidates со строковыми шаблонами:
+    При создании топика через forum.create_topic автоматически формируются и инвалидируются
+    динамические теги вида 'forum.topics' и 'forum.category.{category_id}'.
+    """
+    async with await PersonaManager.as_guest() as listener:
+        async with await PersonaManager.as_admin() as admin:
+            wait_task = asyncio.create_task(listener.wait_for_notification("cache.invalidate", timeout=5.0))
+            await asyncio.sleep(0.05)
+
+            cat_id = 1
+            res = await admin.call("forum.create_topic", {
+                "title": "Тест строковых шаблонов декоратора @invalidates",
+                "category_id": cat_id,
+                "content": "Проверка динамического тега forum.category.{category_id}",
+            })
+            assert_rpc_success(res, expected_keys=["id", "status"])
+            topic_id = res["id"]
+
+            try:
+                notif = await wait_task
+                assert_notification(notif, "cache.invalidate")
+                tags = notif["params"]["tags"]
+                assert "forum.topics" in tags, f"forum.topics отсутствует: {tags}"
+                assert f"forum.category.{cat_id}" in tags, f"Динамический тег forum.category.{cat_id} отсутствует: {tags}"
+            finally:
+                await admin.call("forum.delete_topic", {"id": topic_id})

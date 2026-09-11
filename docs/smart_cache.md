@@ -68,26 +68,31 @@ Conventional web applications are caught between two undesirable extremes:
 
 ### The `@invalidates` Decorator
 
-Decorates any mutating RPC method. Tags can be defined as static strings or dynamically evaluated from parameters and results:
+Decorates any mutating RPC method. Supports declarative string templates with automatic variable substitution from `params` and `result`:
 
 ```python
 from core.session import rpc_method
 from app.system.smart_cache import invalidates
 
-# Static tag: invalidates forum thread list upon new topic creation
+# Static and dynamic string templates:
 @rpc_method("forum.create_topic")
-@invalidates(tags=["forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}"])
 async def create_topic(session, params):
     ...
-    return {"topic_id": new_id}
+    return {"id": topic.id, "category_id": category_id}
 
-# Dynamic tags: invalidates both the topic list and the specific thread view
+# Invalidate topic list, category, and specific topic thread:
 @rpc_method("forum.create_reply")
-@invalidates(tags=lambda p, res: [f"topic:{p.get('topic_id')}", "forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
 async def create_reply(session, params):
-    topic_id = params.get("topic_id")
     ...
-    return {"reply_id": reply.id}
+    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
+
+# Alternative fallback placeholders {topic_id|id}:
+@rpc_method("forum.delete_topic")
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id|id}"])
+async def delete_topic(session, params):
+    ...
 ```
 
 ### Live Granular Deltas: `patch_tag`

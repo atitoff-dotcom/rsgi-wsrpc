@@ -2,7 +2,7 @@
 
 * **Номер RFC:** 0001
 * **Название:** Smart Event-Driven Cache Plugin (`plugins/smart_cache`)
-* **Статус:** 💡 Proposed (На обсуждении)
+* **Статус:** ✅ Accepted / Implemented (Принят и реализован)
 * **Автор:** Agrita Core Team
 * **Дата:** Сентябрь 2026
 
@@ -91,19 +91,20 @@ sequenceDiagram
 * `user:10:profile` -> версия `12`
 
 #### 2. Декоратор `@invalidates`
-Вешается на мутирующие RPC-методы:
+Вешается на мутирующие RPC-методы с декларативными строковыми шаблонами:
 ```python
-from plugins.smart_cache import invalidates
+from app.system.smart_cache import invalidates
 
 @rpc_method("forum.create_reply")
-@invalidates(tags=lambda params: [f"forum.topic:{params['topic_id']}", "forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
 async def create_reply(session, params):
     # Бизнес-логика создания ответа...
-    return {"reply_id": reply.id}
+    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
 ```
 После успешного завершения хендлера сервер:
-1. Инкрементирует версию указанных тегов в реестре.
-2. Автоматически отправляет сигнал активным сокетам.
+1. Автоматически подставляет параметры из `params` и `result` в строковые шаблоны.
+2. Инкрементирует монотонную версию указанных тегов в реестре.
+3. Рассылает push-сигнал `cache.invalidate` активным сокетам.
 
 #### 3. Два типа реактивных сигналов:
 * **`cache.invalidate` (Легковесный сигнал по тегам)**:
@@ -218,18 +219,19 @@ const topics = await smartCache.getOrFetch(
 ## 7. План поэтапной реализации
 
 ### Этап 1: Бэкенд плагина (`plugins/smart_cache`)
-* [ ] Класс `VersionRegistry` (хранение версий тегов в памяти процесса + персистентность в SQLite).
-* [ ] Декоратор `@invalidates(tags=[...])` для оборачивания RPC-методов.
-* [ ] Генератор широковещательных событий `cache.invalidate` и `cache.patch` через `app/system/broadcast.py`.
-* [ ] RPC-метод `cache.sync_check` для сверки версий при подключении.
+* [x] Класс `VersionRegistry` (хранение версий тегов в памяти процесса + персистентность в SQLite).
+* [x] Декоратор `@invalidates(tags=[...])` с поддержкой строковых шаблонов `{key}` и `{obj.key}`.
+* [x] Генератор широковещательных событий `cache.invalidate` и `cache.patch` через `app/system/broadcast.py`.
+* [x] RPC-метод `cache.sync_check` и `cache.get_versions` для сверки версий при подключении.
 
 ### Этап 2: Фронтенд-клиент (`client/smartCache.ts`)
-* [ ] Хранилище L1 (JavaScript `Map` / реактивный стор).
-* [ ] Хранилище L2 (асинхронный адаптер IndexedDB / localStorage).
-* [ ] Метод `smartCache.getOrFetch(key, fetcher, options)`.
-* [ ] Автоматическая подписка на `rpc.on("cache.invalidate")` и `rpc.on("cache.patch")`.
-* [ ] Интеграция рукопожатия версий в хук `rpc.onConnect`.
+* [x] Хранилище L1 (JavaScript `Map` / реактивный стор).
+* [x] Хранилище L2 (асинхронный адаптер IndexedDB / localStorage).
+* [x] Метод `smartCache.getOrFetch(key, fetcher, options)`.
+* [x] Автоматическая подписка на `rpc.on("cache.invalidate")` и `rpc.on("cache.patch")`.
+* [x] Интеграция рукопожатия версий в хук `rpc.onConnect`.
 
 ### Этап 3: Документация и интеграция в приложение
-* [ ] Создание руководства `docs/smart_cache.md` и `docs_ru/smart_cache.md`.
-* [ ] Тестовое внедрение в модуль форума (`app/forum`) и статей (`app/articles`).
+* [x] Создание руководства `docs/smart_cache.md` и `docs_ru/smart_cache.md`.
+* [x] Внедрение в модуль форума (`app/forum`) и статей (`app/articles`).
+* [x] Автотесты (`tests/suites/test_smart_cache.py`, `test_forum.py`, `test_load.py`).

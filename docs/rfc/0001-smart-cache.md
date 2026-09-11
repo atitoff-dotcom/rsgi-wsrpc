@@ -2,7 +2,7 @@
 
 * **RFC Number:** 0001
 * **Title:** Smart Event-Driven Cache Plugin (`plugins/smart_cache`)
-* **Status:** 💡 Proposed
+* **Status:** ✅ Accepted / Implemented
 * **Author:** Agrita Core Team
 * **Date:** September 2026
 
@@ -91,19 +91,20 @@ The server maintains monotonic version counters for entity tags:
 * `user:10:profile` -> Version `12`
 
 #### 2. `@invalidates` Method Decorator
-Decorates mutating RPC handlers:
+Decorates mutating RPC handlers using declarative string templates:
 ```python
-from plugins.smart_cache import invalidates
+from app.system.smart_cache import invalidates
 
 @rpc_method("forum.create_reply")
-@invalidates(tags=lambda params: [f"forum.topic:{params['topic_id']}", "forum.topics"])
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
 async def create_reply(session, params):
     # Business logic execution...
-    return {"reply_id": reply.id}
+    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
 ```
 Upon successful handler execution, the server:
-1. Increments monotonic version numbers for specified tags.
-2. Emits an invalidation frame to active sockets.
+1. Automatically substitutes placeholders from `params` and `result` into string templates.
+2. Increments monotonic version numbers for specified tags in the registry.
+3. Emits a push invalidation signal `cache.invalidate` to active sockets.
 
 #### 3. Reactive Signal Protocols:
 * **`cache.invalidate` (Tag-based Invalidation Signal)**:
@@ -216,18 +217,19 @@ What happens when a user reopens their laptop in the morning or reconnects after
 ## 7. Implementation Roadmap
 
 ### Phase 1: Backend Plugin (`plugins/smart_cache`)
-* [ ] `VersionRegistry` class (in-memory process cache + SQLite persistence).
-* [ ] `@invalidates(tags=[...])` decorator for RPC handlers.
-* [ ] Broadcast event emitters for `cache.invalidate` and `cache.patch`.
-* [ ] `cache.sync_check` RPC method for reconnection version verification.
+* [x] `VersionRegistry` class (in-memory process cache + SQLite persistence).
+* [x] `@invalidates(tags=[...])` decorator with `{key}` and `{obj.key}` string template substitution.
+* [x] Broadcast event emitters for `cache.invalidate` and `cache.patch`.
+* [x] `cache.sync_check` and `cache.get_versions` RPC methods for reconnection verification.
 
 ### Phase 2: Frontend Client (`client/smartCache.ts`)
-* [ ] L1 in-memory storage map.
-* [ ] L2 IndexedDB / localStorage persistence adapter.
-* [ ] `smartCache.getOrFetch(key, fetcher, options)` method.
-* [ ] Built-in listeners for `rpc.on("cache.invalidate")` and `rpc.on("cache.patch")`.
-* [ ] Automatic sync handshake in `rpc.onConnect`.
+* [x] L1 in-memory storage map.
+* [x] L2 IndexedDB / localStorage persistence adapter.
+* [x] `smartCache.getOrFetch(key, fetcher, options)` method.
+* [x] Built-in listeners for `rpc.on("cache.invalidate")` and `rpc.on("cache.patch")`.
+* [x] Automatic sync handshake in `rpc.onConnect`.
 
 ### Phase 3: Documentation & Application Ingestion
-* [ ] Developer guide in `docs/smart_cache.md` and `docs_ru/smart_cache.md`.
-* [ ] Pilot rollout in `app/forum` and `app/articles`.
+* [x] Developer guide in `docs/smart_cache.md` and `docs_ru/smart_cache.md`.
+* [x] Pilot rollout in `app/forum` and `app/articles`.
+* [x] Automated test suite (`tests/suites/test_smart_cache.py`, `test_forum.py`, `test_load.py`).
