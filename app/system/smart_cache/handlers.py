@@ -16,7 +16,9 @@ async def cache_sync_check(session: JsonRpcSession, params: Dict[str, Any]):
     params = {"tags": {"forum.topics": 105, "profile": 12}}
     Сервер сравнивает с актуальными и возвращает список тех, которые устарели.
     """
-    client_tags = params.get("tags", {})
+    client_tags = params.get("tags")
+    if client_tags is None:
+        client_tags = params.get("manifest", {})
     if not isinstance(client_tags, dict):
         raise RPCError("Параметр 'tags' должен быть словарем {tag_name: version}")
 
