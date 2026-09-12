@@ -359,6 +359,7 @@ The official `BinaryWSRPC` client provides a reactive environment for connecting
 * **Native Multi-Return (`callStream`)**: Live progress indicators, streamed computations, and log streaming without secondary WebSockets.
 * **Server Push & Event Notifications** (`rpc.on(...)`).
 * **Symmetric RPC**: The server can invoke client-side methods and await the user's return value (`rpc.registerMethod(...)`).
+* **Session Gatekeeper (`authInterceptor`)**: Automatic bootstrap synchronization. Outgoing business calls automatically await session authentication (`login.refresh`) upon cold start (F5) or reconnection, eliminating race conditions.
 * **Reactive State Stores**: Reactive network state tracking (`wsConnected`, `wsStatus`).
 
 ---
@@ -599,4 +600,27 @@ async def withdraw_money(session: JsonRpcSession, params: dict):
     await execute_withdrawal(amount, account)
     return {"status": "success", "transferred": amount}
 ```
+
+---
+
+### 6. Session Gatekeeper (`authInterceptor`)
+
+WebSocket connections are stateful: when a user performs a cold page refresh (F5) or reconnects after network loss, the physical socket connects as an anonymous guest until the client issues a session renewal handshake (`login.refresh`). 
+
+To prevent race conditions where early component mounting triggers protected calls before authentication finishes, `BinaryWSRPC` includes a built-in **Session Gatekeeper**:
+
+```typescript
+// Register the gatekeeper hook during app bootstrap (e.g. in auth.ts):
+rpc.authInterceptor = async () => {
+    const token = localStorage.getItem('rpc_token');
+    if (!token) return;
+    await restoreSession();
+};
+```
+
+#### How it works:
+1. **Automatic Request Queueing**: When UI components invoke protected methods (such as `admin.list_users` or `messages.get_conversations`), the client automatically holds all outgoing non-auth calls until `authInterceptor` finishes validating the session.
+2. **Deadlock Prevention**: Authentication and system methods (`login.*`, `auth.*`, `system.*`) automatically bypass the gatekeeper.
+3. **Seamless Reconnection**: After network drops, the first subsequent RPC request automatically triggers re-authentication before sending payload data, preventing `401 / Forbidden` errors across the entire UI.
+
 

@@ -53,6 +53,36 @@ export function getWsUrl(): string {
  * Реактивный JSON-RPC 2.0 клиент на Svelte 5 (BinaryWSRPC).
  * Обеспечивает полную обратную совместимость с интерфейсом старого wsrpc.ts.
  */
+/**
+ * WSRPC Tabular Payload Decompression (RFC 0002).
+ * Автоматически распаковывает компактный табличный формат {$tabular: true, fields: [...], rows: [...]}
+ * в плоские JavaScript-объекты. Рекурсивно обрабатывает списки и словари.
+ */
+export function unpackTabular(data: any): any {
+    if (!data || typeof data !== "object") return data;
+
+    if (data.$tabular === true && Array.isArray(data.fields) && Array.isArray(data.rows)) {
+        const fields = data.fields;
+        return data.rows.map((row: any[]) => {
+            const obj: Record<string, any> = {};
+            for (let i = 0; i < fields.length; i++) {
+                obj[fields[i]] = row[i];
+            }
+            return obj;
+        });
+    }
+
+    if (Array.isArray(data)) {
+        return data.map(item => unpackTabular(item));
+    }
+
+    const res: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+        res[key] = unpackTabular(data[key]);
+    }
+    return res;
+}
+
 export class BinaryWSRPC {
     // Статус подключения
     public status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' = 'DISCONNECTED';
@@ -79,6 +109,9 @@ export class BinaryWSRPC {
     private connectingPromise: Promise<void> | null = null;
     public onConnect: (() => void) | null = null; // Вызывается при каждом успешном коннекте
     public onStatusChange: ((connected: boolean) => void) | null = null; // Вызывается при изменении состояния сети (true/false)
+
+    // Системный шлюз авторизации сессии (Gatekeeper): гарантирует авторизацию сессии на сокете до отправки бизнес-запросов
+    public authInterceptor: (() => Promise<any>) | null = null;
  
     constructor(url?: string) {
         this.url = url || getWsUrl();
@@ -263,6 +296,17 @@ export class BinaryWSRPC {
             }
         }
 
+
+        // Системный шлюз (Gatekeeper): гарантирует авторизацию сессии на сокете до выполнения бизнес-запросов
+        const isBypassMethod = method.startsWith("login.") || method.startsWith("system.") || method.startsWith("auth.");
+        if (!isBypassMethod && this.authInterceptor) {
+            try {
+                await this.authInterceptor();
+            } catch (authErr) {
+                console.warn("[WSRPC Gatekeeper] Ошибка ожидания авторизации сессии:", authErr);
+            }
+        }
+
         return new Promise((resolve, reject) => {
             if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                 return reject(new Error('WSRPC: Not connected to server'));
@@ -309,6 +353,17 @@ export class BinaryWSRPC {
                 await this.connect();
             } catch (err) {
                 return Promise.reject(err);
+            }
+        }
+
+
+        // Системный шлюз (Gatekeeper) для потоковых запросов
+        const isBypassMethod = rpcName.startsWith("login.") || rpcName.startsWith("system.") || rpcName.startsWith("auth.");
+        if (!isBypassMethod && this.authInterceptor) {
+            try {
+                await this.authInterceptor();
+            } catch (authErr) {
+                console.warn("[WSRPC Gatekeeper] Ошибка ожидания авторизации сессии (stream):", authErr);
             }
         }
 
@@ -370,7 +425,7 @@ export class BinaryWSRPC {
         if (rpcId !== undefined && data.result && data.result.stream) {
             const listener = this.streamListeners.get(rpcId);
             if (listener) {
-                listener(data.result.data);
+                listener(unpackTabular(data.result.data));
                 return;
             }
         }
@@ -386,7 +441,7 @@ export class BinaryWSRPC {
             if ('error' in data) {
                 pending.reject(data.error.message || data.error);
             } else {
-                pending.resolve(data.result);
+                pending.resolve(unpackTabular(data.result));
             }
             return;
         }
@@ -406,7 +461,7 @@ export class BinaryWSRPC {
                 return;
             }
             try {
-                const result = await handler(data.params || {});
+                const result = await handler(unpackTabular(data.params || {}));
                 if (rpcId !== null && rpcId !== undefined) {
                     this.sendRaw({ jsonrpc: '2.0', result, id: rpcId });
                 }
