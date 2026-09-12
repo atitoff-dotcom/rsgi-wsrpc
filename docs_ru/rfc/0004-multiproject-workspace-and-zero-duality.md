@@ -136,21 +136,16 @@ workspace/                                  # Зонтичная рабочая 
 │   ├── backend/
 │   └── frontend/
 │
-└── apps/                                   # Каталог прикладных сервисов
-    └── agrita/                             # РЕПОЗИТОРИЙ 3: Платформа Агрита (Git: agrita)
-        ├── backend/                        # Бэкенд приложения
-        │   ├── main.py                     # Точка входа (запуск Granian RSGI через rsgi_wsrpc)
-        │   ├── models/                     # Агрономические ORM-модели (User, Fertilizers, Recipes)
-        │   ├── handlers/                   # WSRPC бизнес-методы (login.*, calc.*, forum.*)
-        │   ├── settings.yaml               # Настройки БД и приложения
-        │   └── migrations/                 # Миграции базы данных (Alembic)
-        ├── frontend/                       # SvelteKit интерфейс
-        │   ├── src/
-        │   ├── vite.config.ts              # Алиас к ../../rsgi-wsrpc/client
-        │   └── package.json
-        ├── content/                        # Статьи базы знаний (Markdown)
-        ├── docs/                           # Чисто агрономическая документация (формулы, паспорта)
-        └── deploy-stage.sh                 # Скрипт развертывания на Stage/Prod
+└── apps/                                   # Каталог прикладных сервисов и сред
+    ├── agrita/                             # Боевой контур (Production / agrita.ru)
+    │   ├── backend/
+    │   ├── frontend/
+    │   └── deploy-prod.sh
+    │
+    └── agrita-stage/                       # Стейджинг контур (Staging / stage.agrita.ru)
+        ├── backend/
+        ├── frontend/
+        └── deploy-stage.sh
 ```
 
 ---
@@ -217,7 +212,7 @@ sys.modules["core.constants"] = constants
 По умолчанию Vite блокирует доступ к файлам, расположенным выше корня проекта. Для безопасного подключения клиента фреймворка из соседнего репозитория в `vite.config.ts` настраивается алиас и директива `server.fs.allow`:
 
 ```typescript
-// apps/agrita/frontend/vite.config.ts
+// apps/agrita/frontend/vite.config.ts или apps/agrita-stage/frontend/vite.config.ts
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import path from 'path';
@@ -256,23 +251,27 @@ import { smartCache } from '@wsrpc/smartCache';
 
 ---
 
-## 8. Симметрия среды на Stage-сервере (`195.133.5.32`)
+## 8. Симметрия среды на сервере: `rsgi-wsrpc`, `apps/agrita` и `apps/agrita-stage`
 
-Для исключения сюрпризов при развертывании раскладка на боевом/тестовом сервере на 100% повторяет локальное рабочее место разработчика.
+Для исключения сюрпризов при развертывании раскладка на сервере на 100% повторяет локальное рабочее место разработчика и гармонично сосуществует для **Production** и **Staging**.
 
 ### 8.1 Файловая структура на сервере (`/home/alex/workspace/`)
 ```text
-/home/alex/workspace/                       # Единый корень на Stage
-├── .venv/                                  # Единое виртуальное окружение
-├── rsgi-wsrpc/                             # Репозиторий Ядра (клон с GitHub)
+/home/alex/workspace/                       # Единый корень платформы
+├── .venv/                                  # Единое виртуальное окружение для ядра и всех инстансов
+├── rsgi-wsrpc/                             # Единственный репозиторий Ядра (клон с GitHub)
 └── apps/
-    └── agrita/                             # Репозиторий Агриты (клон с GitHub)
-        ├── backend/
-        ├── frontend/
-        └── content/
+    ├── agrita/                             # Боевой контур (Production, agrita.ru)
+    │   ├── backend/                        # Порт 8090, БД agrita_prod
+    │   └── frontend/build/
+    └── agrita-stage/                       # Тестовый контур (Staging, stage.agrita.ru)
+        ├── backend/                        # Порт 8092, БД agrita_stage
+        └── frontend/build/
 ```
 
-### 8.2 Конфигурация службы Systemd (`/etc/systemd/system/agrita-stage.service`)
+### 8.2 Конфигурация служб Systemd
+
+#### Служба Staging (`/etc/systemd/system/agrita-stage.service`):
 ```ini
 [Unit]
 Description=Agrita Stage Application (RSGI Granian)
@@ -281,7 +280,7 @@ After=network.target postgresql.service
 [Service]
 User=alex
 Group=alex
-WorkingDirectory=/home/alex/workspace/apps/agrita/backend
+WorkingDirectory=/home/alex/workspace/apps/agrita-stage/backend
 Environment="PATH=/home/alex/workspace/.venv/bin"
 Environment="DATABASE_URL=postgresql+asyncpg://agrita_user:AgritaSecurePass2026@/agrita_stage?host=/var/run/postgresql"
 ExecStart=/home/alex/workspace/.venv/bin/python main.py
@@ -294,35 +293,90 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-### 8.3 Конфигурация Nginx (`/etc/nginx/sites-available/stage.agrita.ru`)
-* Статический бандл фронтенда: `root /home/alex/workspace/apps/agrita/frontend/build/client;`
-* Загруженные медиафайлы: `alias /home/alex/workspace/apps/agrita/backend/data/files/;`
-* Проксирование WSRPC и API: без изменений (на порт Granian 8092 через localhost или Unix Domain Socket).
+#### Служба Production (`/etc/systemd/system/agrita.service`):
+```ini
+[Unit]
+Description=Agrita Production Application (RSGI Granian)
+After=network.target postgresql.service
 
-### 8.4 Детерминированный скрипт деплоя (`deploy-stage.sh`)
+[Service]
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/workspace/apps/agrita/backend
+Environment="PATH=/home/alex/workspace/.venv/bin"
+Environment="DATABASE_URL=postgresql+asyncpg://agrita_prod_user:ProdSecurePass2026@/agrita_prod?host=/var/run/postgresql"
+ExecStart=/home/alex/workspace/.venv/bin/python main.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 8.3 Конфигурация Nginx
+* **Staging (`stage.agrita.ru`)**:
+  * Статика фронтенда: `root /home/alex/workspace/apps/agrita-stage/frontend/build/client;`
+  * Файлы: `alias /home/alex/workspace/apps/agrita-stage/backend/data/files/;`
+  * Проксирование WSRPC: на порт 8092.
+* **Production (`agrita.ru`)**:
+  * Статика фронтенда: `root /home/alex/workspace/apps/agrita/frontend/build/client;`
+  * Файлы: `alias /home/alex/workspace/apps/agrita/backend/data/files/;`
+  * Проксирование WSRPC: на порт 8090.
+
+### 8.4 Детерминированные скрипты деплоя
+
+#### Деплой Staging (`deploy-stage.sh`):
 ```bash
 #!/usr/bin/env bash
 set -e
 
 WORKSPACE="/home/alex/workspace"
 CORE_DIR="$WORKSPACE/rsgi-wsrpc"
-APP_DIR="$WORKSPACE/apps/agrita"
+STAGE_DIR="$WORKSPACE/apps/agrita-stage"
 
 echo "=== 1. Обновление репозитория Ядра ==="
 git -C "$CORE_DIR" pull origin main
 
-echo "=== 2. Обновление репозитория Приложения ==="
-git -C "$APP_DIR" pull origin main
+echo "=== 2. Обновление репозитория Agrita Stage ==="
+git -C "$STAGE_DIR" pull origin main
 
-echo "=== 3. Сборка фронтенда SvelteKit ==="
-cd "$APP_DIR/frontend"
+echo "=== 3. Сборка фронтенда Stage ==="
+cd "$STAGE_DIR/frontend"
 npm install --silent
 npm run build
 
-echo "=== 4. Перезапуск службы ==="
+echo "=== 4. Перезапуск службы Stage ==="
 sudo systemctl restart agrita-stage
 
 echo "✅ Деплой Stage успешно завершен!"
+```
+
+#### Деплой Production (`deploy-prod.sh`):
+```bash
+#!/usr/bin/env bash
+set -e
+
+WORKSPACE="/home/alex/workspace"
+CORE_DIR="$WORKSPACE/rsgi-wsrpc"
+PROD_DIR="$WORKSPACE/apps/agrita"
+
+echo "=== 1. Обновление репозитория Ядра ==="
+git -C "$CORE_DIR" pull origin main
+
+echo "=== 2. Обновление репозитория Agrita Production ==="
+git -C "$PROD_DIR" pull origin production
+
+echo "=== 3. Сборка фронтенда Production ==="
+cd "$PROD_DIR/frontend"
+npm install --silent
+npm run build
+
+echo "=== 4. Перезапуск службы Production ==="
+sudo systemctl restart agrita
+
+echo "✅ Деплой Production успешно завершен!"
 ```
 
 ---

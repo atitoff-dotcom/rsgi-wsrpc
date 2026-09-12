@@ -136,21 +136,16 @@ workspace/                                  # Root Umbrella Workspace
 │   ├── backend/
 │   └── frontend/
 │
-└── apps/                                   # Domain Applications Directory
-    └── agrita/                             # REPOSITORY 3: Agrita Platform (Git: agrita)
-        ├── backend/                        # Application Backend
-        │   ├── main.py                     # Entry point (boots Granian RSGI via rsgi_wsrpc)
-        │   ├── models/                     # Agronomy ORM models (User, Fertilizers, Recipes)
-        │   ├── handlers/                   # WSRPC business methods (login.*, calc.*, forum.*)
-        │   ├── settings.yaml               # Database & application configuration
-        │   └── migrations/                 # Alembic migrations
-        ├── frontend/                       # SvelteKit User Interface
-        │   ├── src/
-        │   ├── vite.config.ts              # Aliased to ../../rsgi-wsrpc/client
-        │   └── package.json
-        ├── content/                        # Markdown knowledge base & articles
-        ├── docs/                           # Pure agronomy documentation (formulas, passports)
-        └── deploy-stage.sh                 # Production/Staging deployment automation
+└── apps/                                   # Domain Applications & Environments Directory
+    ├── agrita/                             # Production Environment (agrita.ru)
+    │   ├── backend/
+    │   ├── frontend/
+    │   └── deploy-prod.sh
+    │
+    └── agrita-stage/                       # Staging Environment (stage.agrita.ru)
+        ├── backend/
+        ├── frontend/
+        └── deploy-stage.sh
 ```
 
 ---
@@ -217,7 +212,7 @@ Legacy statements like `from core.session import rpc_method` continue to execute
 By default, Vite blocks requests to files residing outside the project directory. To safely permit the frontend to import the framework client from the sibling repository, `vite.config.ts` configures both the path alias and `server.fs.allow`:
 
 ```typescript
-// apps/agrita/frontend/vite.config.ts
+// apps/agrita/frontend/vite.config.ts or apps/agrita-stage/frontend/vite.config.ts
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import path from 'path';
@@ -256,23 +251,27 @@ When an engineer enhances performance or fixes an issue in `rsgi-wsrpc/client/ws
 
 ---
 
-## 8. Stage & Production Server Symmetry (`195.133.5.32`)
+## 8. Server Symmetry: `rsgi-wsrpc`, `apps/agrita`, and `apps/agrita-stage`
 
-To eliminate deployment surprises, the layout on staging and production servers mirrors the local workspace with 100% fidelity.
+To eliminate deployment surprises, the layout on staging and production servers mirrors the local workspace with 100% fidelity, harmoniously supporting both **Production** and **Staging** instances.
 
 ### 8.1 Server Directory Layout (`/home/alex/workspace/`)
 ```text
-/home/alex/workspace/                       # Unified root on Stage
-├── .venv/                                  # Shared virtual environment
-├── rsgi-wsrpc/                             # Core repository (cloned from GitHub)
+/home/alex/workspace/                       # Unified root on Server
+├── .venv/                                  # Shared virtual environment across Core and all apps
+├── rsgi-wsrpc/                             # Single Core repository (cloned from GitHub)
 └── apps/
-    └── agrita/                             # Agrita application repository
+    ├── agrita/                             # Production instance (agrita.ru, port 8090, DB agrita_prod)
+    │   ├── backend/
+    │   └── frontend/build/
+    └── agrita-stage/                       # Staging instance (stage.agrita.ru, port 8092, DB agrita_stage)
         ├── backend/
-        ├── frontend/
-        └── content/
+        └── frontend/build/
 ```
 
-### 8.2 Systemd Service Unit (`/etc/systemd/system/agrita-stage.service`)
+### 8.2 Systemd Service Units
+
+#### Staging Service (`/etc/systemd/system/agrita-stage.service`):
 ```ini
 [Unit]
 Description=Agrita Stage Application (RSGI Granian)
@@ -281,7 +280,7 @@ After=network.target postgresql.service
 [Service]
 User=alex
 Group=alex
-WorkingDirectory=/home/alex/workspace/apps/agrita/backend
+WorkingDirectory=/home/alex/workspace/apps/agrita-stage/backend
 Environment="PATH=/home/alex/workspace/.venv/bin"
 Environment="DATABASE_URL=postgresql+asyncpg://agrita_user:AgritaSecurePass2026@/agrita_stage?host=/var/run/postgresql"
 ExecStart=/home/alex/workspace/.venv/bin/python main.py
@@ -294,35 +293,90 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-### 8.3 Nginx Configuration (`/etc/nginx/sites-available/stage.agrita.ru`)
-* Static Frontend Bundle: `root /home/alex/workspace/apps/agrita/frontend/build/client;`
-* Media Uploads: `alias /home/alex/workspace/apps/agrita/backend/data/files/;`
-* WSRPC & API: Reverse-proxied to Granian on port 8092 via localhost or Unix Domain Socket.
+#### Production Service (`/etc/systemd/system/agrita.service`):
+```ini
+[Unit]
+Description=Agrita Production Application (RSGI Granian)
+After=network.target postgresql.service
 
-### 8.4 Deterministic Deployment Script (`deploy-stage.sh`)
+[Service]
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/workspace/apps/agrita/backend
+Environment="PATH=/home/alex/workspace/.venv/bin"
+Environment="DATABASE_URL=postgresql+asyncpg://agrita_prod_user:ProdSecurePass2026@/agrita_prod?host=/var/run/postgresql"
+ExecStart=/home/alex/workspace/.venv/bin/python main.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 8.3 Nginx Configuration
+* **Staging (`stage.agrita.ru`)**:
+  * Static Frontend: `root /home/alex/workspace/apps/agrita-stage/frontend/build/client;`
+  * Media Uploads: `alias /home/alex/workspace/apps/agrita-stage/backend/data/files/;`
+  * WSRPC & API: Proxied to Granian on port 8092 via localhost or Unix Domain Socket.
+* **Production (`agrita.ru`)**:
+  * Static Frontend: `root /home/alex/workspace/apps/agrita/frontend/build/client;`
+  * Media Uploads: `alias /home/alex/workspace/apps/agrita/backend/data/files/;`
+  * WSRPC & API: Proxied to Granian on port 8090 via localhost or Unix Domain Socket.
+
+### 8.4 Deterministic Deployment Scripts
+
+#### Staging Deployment (`deploy-stage.sh`):
 ```bash
 #!/usr/bin/env bash
 set -e
 
 WORKSPACE="/home/alex/workspace"
 CORE_DIR="$WORKSPACE/rsgi-wsrpc"
-APP_DIR="$WORKSPACE/apps/agrita"
+STAGE_DIR="$WORKSPACE/apps/agrita-stage"
 
 echo "=== 1. Pulling Core Updates ==="
 git -C "$CORE_DIR" pull origin main
 
-echo "=== 2. Pulling Application Updates ==="
-git -C "$APP_DIR" pull origin main
+echo "=== 2. Pulling Stage App Updates ==="
+git -C "$STAGE_DIR" pull origin main
 
-echo "=== 3. Building Frontend Bundle ==="
-cd "$APP_DIR/frontend"
+echo "=== 3. Building Stage Frontend ==="
+cd "$STAGE_DIR/frontend"
 npm install --silent
 npm run build
 
-echo "=== 4. Restarting Application Service ==="
+echo "=== 4. Restarting Stage Service ==="
 sudo systemctl restart agrita-stage
 
 echo "✅ Stage deployment successfully completed!"
+```
+
+#### Production Deployment (`deploy-prod.sh`):
+```bash
+#!/usr/bin/env bash
+set -e
+
+WORKSPACE="/home/alex/workspace"
+CORE_DIR="$WORKSPACE/rsgi-wsrpc"
+PROD_DIR="$WORKSPACE/apps/agrita"
+
+echo "=== 1. Pulling Core Updates ==="
+git -C "$CORE_DIR" pull origin main
+
+echo "=== 2. Pulling Production App Updates ==="
+git -C "$PROD_DIR" pull origin production
+
+echo "=== 3. Building Production Frontend ==="
+cd "$PROD_DIR/frontend"
+npm install --silent
+npm run build
+
+echo "=== 4. Restarting Production Service ==="
+sudo systemctl restart agrita
+
+echo "✅ Production deployment successfully completed!"
 ```
 
 ---
