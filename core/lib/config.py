@@ -52,35 +52,33 @@ class Settings:
 
 def load_settings() -> Settings:
     """
-    Загружает конфигурационные файлы ядра платформы (core_settings.yaml и core_settings_my.yaml)
+    Загружает конфигурационные файлы ядра платформы (settings.yaml / core_settings.yaml)
+    из директории фреймворка и текущей рабочей директории приложения (CWD)
     и объединяет их в единый древовидный объект настроек Settings.
     """
     data = {}
 
-    # Определяем корневую директорию проекта относительно расположения этого файла (core/lib/config.py)
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    settings_path = os.path.join(root_dir, "core_settings.yaml")
-    my_settings_path = os.path.join(root_dir, "core_settings_my.yaml")
+    cwd = os.getcwd()
 
-    # 1. Загружаем основной общесистемный core_settings.yaml
-    if os.path.exists(settings_path):
-        try:
-            with open(settings_path, "r", encoding="utf-8") as f:
-                content = yaml.safe_load(f)
-                if isinstance(content, dict):
-                    data = content
-        except Exception as e:
-            logger.error(f"Ошибка при чтении core_settings.yaml: {e}")
+    # Кандидаты для последовательной загрузки и переопределения
+    candidate_paths = [
+        os.path.join(root_dir, "settings.yaml"),
+        os.path.join(root_dir, "core_settings.yaml"),
+        os.path.join(cwd, "settings.yaml"),
+        os.path.join(cwd, "core_settings.yaml"),
+        os.path.join(cwd, "core_settings_my.yaml"),
+    ]
 
-    # 2. Загружаем локальный пользовательский core_settings_my.yaml, если он существует
-    if os.path.exists(my_settings_path):
-        try:
-            with open(my_settings_path, "r", encoding="utf-8") as f:
-                content_my = yaml.safe_load(f)
-                if isinstance(content_my, dict):
-                    data = deep_merge(data, content_my)
-        except Exception as e:
-            logger.error(f"Ошибка при чтении core_settings_my.yaml: {e}")
+    for path in candidate_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    content = yaml.safe_load(f)
+                    if isinstance(content, dict):
+                        data = deep_merge(data, content)
+            except Exception as e:
+                logger.error(f"Ошибка при чтении {path}: {e}")
 
     return Settings(data)
 

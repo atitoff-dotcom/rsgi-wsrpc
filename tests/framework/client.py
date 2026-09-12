@@ -143,7 +143,7 @@ class TestClient:
             if raw:
                 return res
             try:
-                from app.system.tabular import unpack_tabular
+                from core.tabular import unpack_tabular
                 return unpack_tabular(res)
             except ImportError:
                 return res

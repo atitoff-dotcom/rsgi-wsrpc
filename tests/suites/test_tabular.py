@@ -10,7 +10,7 @@
 import asyncio
 import orjson
 from tests.framework import PersonaManager, assert_rpc_success
-from app.system.tabular import pack_tabular, unpack_tabular, is_tabular
+from core.tabular import pack_tabular, unpack_tabular, is_tabular
 
 
 def test_tabular_roundtrip():

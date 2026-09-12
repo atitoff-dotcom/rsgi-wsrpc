@@ -1,16 +1,12 @@
-# rsgi-wsrpc default configuration
-app:
-  name: "rsgi-wsrpc"
-  debug: true
-
+# Дефолтные настройки сетевого рантайма rsgi-wsrpc
 server:
   host: "127.0.0.1"
   port: 8080
 
-database_url: "sqlite+aiosqlite:///data/app.db"
-files_path: "files"
-
+# Безопасность транспортных сессий WSRPC
 security:
   secret_key: "CHANGE_ME_IN_PRODUCTION_SECRET_KEY_MIN_32_BYTES"
-  token_expire_hours: 24
   session_idle_timeout: 900
+  password_iterations: 10000
+  token_expire_hours: 24
+  login_rpc: ""
