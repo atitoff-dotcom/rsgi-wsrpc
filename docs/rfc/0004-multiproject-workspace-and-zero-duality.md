@@ -12,12 +12,13 @@
 1. [Summary](#1-summary)
 2. [Motivation & The Problem of Duality](#2-motivation--the-problem-of-duality)
 3. [The Single Source of Truth (SSOT) Principle](#3-the-single-source-of-truth-ssot-principle)
-4. [Target Workspace Architecture (Umbrella Workspace)](#4-target-workspace-architecture-umbrella-workspace)
-5. [Backend Namespace & Packaging (`rsgi_wsrpc`)](#5-backend-namespace--packaging-rsgi_wsrpc)
-6. [Frontend Client Integration & Vite Aliasing](#6-frontend-client-integration--vite-aliasing)
-7. [Environment, Tooling & Stage Deployment](#7-environment-tooling--stage-deployment)
-8. [Step-by-Step Migration Plan](#8-step-by-step-migration-plan)
-9. [Conclusion](#9-conclusion)
+4. [Domain Autonomy: Users Belong to Applications, Core Has None](#4-domain-autonomy-users-belong-to-applications-core-has-none)
+5. [Target Workspace Architecture (Umbrella Workspace)](#5-target-workspace-architecture-umbrella-workspace)
+6. [Backend Namespace & Packaging (`rsgi_wsrpc`)](#6-backend-namespace--packaging-rsgi_wsrpc)
+7. [Frontend Client Integration & Vite `fs.allow`](#7-frontend-client-integration--vite-fsallow)
+8. [Stage & Production Server Symmetry (`195.133.5.32`)](#8-stage--production-server-symmetry-195133532)
+9. [Step-by-Step Migration Plan](#9-step-by-step-migration-plan)
+10. [Conclusion](#10-conclusion)
 
 ---
 
@@ -28,8 +29,10 @@ This RFC establishes the target architectural standard for organizing multi-proj
 The primary objective is the total elimination of **duality** — removing all duplicate codebases, mirrored documentation folders, and desynchronized client libraries. Under RFC 0004:
 * **The Core Framework (`rsgi-wsrpc`)** lives strictly as an autonomous, self-contained Git repository and Python package.
 * **Domain Applications (e.g. `agrita`, future banking CRM, ERP)** reside in dedicated project directories (`apps/<app_name>`) with zero internal copies of the framework runtime.
+* **Users Belong to Applications, Core Has None**: the framework core enforces zero database schemas or opinionated user models; it deals solely with an abstract transport `UserContext`.
 * **Canonical Python Namespace (`rsgi_wsrpc`)**: all framework primitives are imported explicitly from `rsgi_wsrpc` (with a transient backward-compatibility alias `core`), completely eliminating namespace collisions.
-* **Single Source of Truth for Frontend**: the TypeScript client (`wsrpc.ts`, `smartCache.ts`) resides only inside `rsgi-wsrpc/client/` and is linked directly into applications via Vite aliases or workspace packages.
+* **Single Source of Truth for Frontend**: the TypeScript client (`wsrpc.ts`, `smartCache.ts`) resides only inside `rsgi-wsrpc/client/` and is linked directly into applications via Vite aliases and `fs.allow`.
+* **Exact Server-Local Symmetry**: the staging server layout mirrors the developer's local workspace layout 1:1.
 
 ---
 
@@ -61,12 +64,53 @@ RFC 0004 mandates strict adherence to the **Single Source of Truth (SSOT)**:
 | **Core Python Code** | Mirrored in `hydro_calc/core/` and `rsgi-wsrpc/core/` | **Strictly in `rsgi-wsrpc/`**, installed via `pip install -e` |
 | **Framework Docs & RFCs** | Mirrored in `docs_core/` and `rsgi-wsrpc/docs/` | **Strictly in `rsgi-wsrpc/docs/` & `docs_ru/`** |
 | **Frontend Client** | Mirrored in `frontend/src/lib/` and `rsgi-wsrpc/client/` | **Strictly in `rsgi-wsrpc/client/`**, resolved via Vite alias |
+| **User & Identity Schema** | Unclear boundary between app and core | **Strictly in application domain**; core has NO user schema |
 | **Python Namespace** | Ambiguous `from core...` | Canonical **`from rsgi_wsrpc...`** |
 | **Domain Docs** | Mixed in application root | **Strictly application-specific** (`apps/agrita/docs/`) |
 
 ---
 
-## 4. Target Workspace Architecture (Umbrella Workspace)
+## 4. Domain Autonomy: Users Belong to Applications, Core Has None
+
+A cornerstone architectural principle of `rsgi-wsrpc` is the complete separation between **Session Context** and **User Identity**:
+
+> **"Users belong to the application. The Core does not have them."**
+
+### 4.1 Why Core Has No User Models
+Frameworks that enforce an opinionated `User` table (such as early Django's rigid `auth_user`) suffer from catastrophic vendor lock-in. Different domains define users in fundamentally incompatible ways:
+* **Agrita (Agronomy/Consumer)**: Users possess crop presets, greenhouse dimensions, subscription tiers, Telegram IDs.
+* **Banking / Fintech**: Users possess employee staff IDs, security clearances, digital signature certificates, branch codes.
+* **Industrial IoT**: There are no human users; identities represent PLC controllers, sensors, and telemetry gateways.
+
+### 4.2 The Transport Contract (`UserContext`)
+The Core framework has no database tables for users, no password hashing opinions, and no email columns. The Core deals solely with the in-memory **Transport Session Context**:
+
+```python
+# The only entity rsgi-wsrpc cares about during connection lifecycle
+@dataclass
+class UserContext:
+    user_id: Any                    # int, UUID, string, or device ID
+    roles: List[str]                # Canonical role names, e.g. ["admin", "operator"]
+    team_ids: List[Union[int, str]] # Team / Branch visibility scope
+    metadata: Dict[str, Any]        # Extra arbitrary domain attributes
+```
+
+### 4.3 Flow of Control
+1. The **Application** defines its own ORM model (e.g. `AgritaUser`, `BankEmployee`, `IotDevice`).
+2. The **Application** validates credentials in its custom login handler (passwords, RSA, OAuth2, LDAP, or certificates).
+3. The **Application** binds the authenticated context to the active WebSocket session:
+   ```python
+   session.set_user_context(
+       user_id=user.id,
+       roles=[r.name for r in user.roles],
+       team_ids=user.get_team_ids()
+   )
+   ```
+4. The **Core** propagates this context to all downstream RPC methods, Smart Cache validators, and RLS filters.
+
+---
+
+## 5. Target Workspace Architecture (Umbrella Workspace)
 
 The development environment is unified under a root workspace directory (e.g. `/home/alex/workspace/` or `/home/alex/projects/`). The name of this top-level container has zero impact on application behavior:
 
@@ -84,7 +128,7 @@ workspace/                                  # Root Umbrella Workspace
 │   ├── client/                             # Canonical TypeScript Client
 │   │   ├── wsrpc.ts                        # WSRPC client with Session Gatekeeper & tabular unpack
 │   │   └── smartCache.ts                   # Client-side cache engine
-│   ├── docs/ & docs_ru/                    # Canonical Framework Documentation & RFCs (0001, 0002, 0003, 0004)
+│   ├── docs/ & docs_ru/                    # Canonical Framework Documentation & RFCs (0001-0004)
 │   ├── tests/                              # Framework standalone test harness
 │   └── pyproject.toml                      # Standard Python packaging configuration
 │
@@ -96,8 +140,8 @@ workspace/                                  # Root Umbrella Workspace
     └── agrita/                             # REPOSITORY 3: Agrita Platform (Git: agrita)
         ├── backend/                        # Application Backend
         │   ├── main.py                     # Entry point (boots Granian RSGI via rsgi_wsrpc)
-        │   ├── models/                     # Agronomy ORM models (fertilizers, recipes, crops)
-        │   ├── handlers/                   # WSRPC business methods (calc.*, forum.*)
+        │   ├── models/                     # Agronomy ORM models (User, Fertilizers, Recipes)
+        │   ├── handlers/                   # WSRPC business methods (login.*, calc.*, forum.*)
         │   ├── settings.yaml               # Database & application configuration
         │   └── migrations/                 # Alembic migrations
         ├── frontend/                       # SvelteKit User Interface
@@ -111,9 +155,9 @@ workspace/                                  # Root Umbrella Workspace
 
 ---
 
-## 5. Backend Namespace & Packaging (`rsgi_wsrpc`)
+## 6. Backend Namespace & Packaging (`rsgi_wsrpc`)
 
-### 5.1 Package Definition in `rsgi-wsrpc/pyproject.toml`
+### 6.1 Package Definition in `rsgi-wsrpc/pyproject.toml`
 The core framework packages its modules under the unambiguous top-level namespace `rsgi_wsrpc`:
 
 ```toml
@@ -135,7 +179,7 @@ dependencies = [
 ]
 ```
 
-### 5.2 Canonical Imports
+### 6.2 Canonical Imports
 Developers import framework capabilities cleanly and expressively:
 
 ```python
@@ -146,7 +190,7 @@ from rsgi_wsrpc.security import current_user_ctx
 from rsgi_wsrpc.tabular import tabular_response
 ```
 
-### 5.3 Zero-Breakage Compatibility Bridge
+### 6.3 Zero-Breakage Compatibility Bridge
 To allow existing applications to transition smoothly without rewriting hundreds of files overnight, `rsgi-wsrpc` provides a top-level `core` compatibility alias during the transition phase:
 
 ```python
@@ -167,10 +211,10 @@ Legacy statements like `from core.session import rpc_method` continue to execute
 
 ---
 
-## 6. Frontend Client Integration & Vite Aliasing
+## 7. Frontend Client Integration & Vite `fs.allow`
 
-### 6.1 Direct Aliasing via `vite.config.ts`
-Instead of copying `wsrpc.ts` into every frontend project, applications link directly to the core client via Vite configuration:
+### 7.1 Vite Configuration with `fs.allow`
+By default, Vite blocks requests to files residing outside the project directory. To safely permit the frontend to import the framework client from the sibling repository, `vite.config.ts` configures both the path alias and `server.fs.allow`:
 
 ```typescript
 // apps/agrita/frontend/vite.config.ts
@@ -185,55 +229,114 @@ export default defineConfig({
             // Direct reference to the canonical framework client
             '@wsrpc': path.resolve(__dirname, '../../../rsgi-wsrpc/client')
         }
+    },
+    server: {
+        fs: {
+            // Permit Vite dev server to read canonical client files outside app root
+            allow: [
+                '..',
+                path.resolve(__dirname, '../../../rsgi-wsrpc/client')
+            ]
+        }
     }
 });
 ```
 
-### 6.2 Transparent Component Consumption
-Inside any application component or store:
+### 7.2 Transparent Component Consumption
+Inside any application component, store, or service:
 ```typescript
 import { rpc, wsConnected } from '@wsrpc/wsrpc';
 import { smartCache } from '@wsrpc/smartCache';
 ```
 
-When an engineer fixes an issue or enhances performance in `rsgi-wsrpc/client/wsrpc.ts`:
+When an engineer enhances performance or fixes an issue in `rsgi-wsrpc/client/wsrpc.ts`:
 1. Vite HMR (Hot Module Replacement) instantly updates the running browser tab.
 2. Zero file copying or npm republishing is needed during local development.
 3. Every application in `apps/` immediately benefits from upstream improvements.
 
 ---
 
-## 7. Environment, Tooling & Stage Deployment
+## 8. Stage & Production Server Symmetry (`195.133.5.32`)
 
-### 7.1 Single Python Virtual Environment
-To preserve RAM and disk on development and staging servers (such as our 1 GB RAM node):
-* A single virtual environment (`.venv`) is created at the workspace root.
-* The core framework is installed in **Editable Mode**:
-  ```bash
-  source /home/alex/workspace/.venv/bin/activate
-  pip install -e /home/alex/workspace/rsgi-wsrpc
-  pip install -r /home/alex/workspace/apps/agrita/backend/requirements.txt
-  ```
-* Any code change made inside `rsgi-wsrpc/` is instantly recognized by the running Python runtime without reinstallation.
+To eliminate deployment surprises, the layout on staging and production servers mirrors the local workspace with 100% fidelity.
 
-### 7.2 Staging & Production Deployment
-In production/staging scripts (`deploy-stage.sh`):
-1. `git -C /home/alex/workspace/rsgi-wsrpc pull origin main`
-2. `git -C /home/alex/workspace/apps/agrita pull origin main`
-3. `systemctl restart agrita-stage`
+### 8.1 Server Directory Layout (`/home/alex/workspace/`)
+```text
+/home/alex/workspace/                       # Unified root on Stage
+├── .venv/                                  # Shared virtual environment
+├── rsgi-wsrpc/                             # Core repository (cloned from GitHub)
+└── apps/
+    └── agrita/                             # Agrita application repository
+        ├── backend/
+        ├── frontend/
+        └── content/
+```
+
+### 8.2 Systemd Service Unit (`/etc/systemd/system/agrita-stage.service`)
+```ini
+[Unit]
+Description=Agrita Stage Application (RSGI Granian)
+After=network.target postgresql.service
+
+[Service]
+User=alex
+Group=alex
+WorkingDirectory=/home/alex/workspace/apps/agrita/backend
+Environment="PATH=/home/alex/workspace/.venv/bin"
+Environment="DATABASE_URL=postgresql+asyncpg://agrita_user:AgritaSecurePass2026@/agrita_stage?host=/var/run/postgresql"
+ExecStart=/home/alex/workspace/.venv/bin/python main.py
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 8.3 Nginx Configuration (`/etc/nginx/sites-available/stage.agrita.ru`)
+* Static Frontend Bundle: `root /home/alex/workspace/apps/agrita/frontend/build/client;`
+* Media Uploads: `alias /home/alex/workspace/apps/agrita/backend/data/files/;`
+* WSRPC & API: Reverse-proxied to Granian on port 8092 via localhost or Unix Domain Socket.
+
+### 8.4 Deterministic Deployment Script (`deploy-stage.sh`)
+```bash
+#!/usr/bin/env bash
+set -e
+
+WORKSPACE="/home/alex/workspace"
+CORE_DIR="$WORKSPACE/rsgi-wsrpc"
+APP_DIR="$WORKSPACE/apps/agrita"
+
+echo "=== 1. Pulling Core Updates ==="
+git -C "$CORE_DIR" pull origin main
+
+echo "=== 2. Pulling Application Updates ==="
+git -C "$APP_DIR" pull origin main
+
+echo "=== 3. Building Frontend Bundle ==="
+cd "$APP_DIR/frontend"
+npm install --silent
+npm run build
+
+echo "=== 4. Restarting Application Service ==="
+sudo systemctl restart agrita-stage
+
+echo "✅ Stage deployment successfully completed!"
+```
 
 ---
 
-## 8. Step-by-Step Migration Plan
+## 9. Step-by-Step Migration Plan
 
 To ensure 100% service continuity with zero downtime, the decoupling is executed in 5 safe steps:
 
 ```mermaid
 graph TD
-    Step1[1. Package rsgi-wsrpc as proper library with core alias] --> Step2[2. Install rsgi-wsrpc in editable mode into .venv]
-    Step2 --> Step3[3. Update Vite alias in Agrita frontend to point to core client]
-    Step3 --> Step4[4. Remove redundant core/ and docs_core/ from Agrita app]
-    Step4 --> Step5[5. Update CI/CD and deployment scripts on Stage]
+    Step1[1. Package rsgi-wsrpc as library with core alias] --> Step2[2. Install rsgi-wsrpc in editable mode into .venv]
+    Step2 --> Step3[3. Configure Vite alias and fs.allow in frontend]
+    Step3 --> Step4[4. Remove redundant core/ and docs_core/ from app]
+    Step4 --> Step5[5. Replicate layout & deploy to Stage server]
 ```
 
 1. **Phase 1: Packaging & Alias Bridge**
@@ -242,8 +345,8 @@ graph TD
 2. **Phase 2: Virtualenv Linking**
    * Register editable package in `.venv`.
    * Verify that existing tests (`tests/run.py --target local`) pass without the local `core/` folder on `sys.path`.
-3. **Phase 3: Frontend Aliasing**
-   * Add `@wsrpc` alias in `apps/agrita/frontend/vite.config.ts`.
+3. **Phase 3: Frontend Aliasing & `fs.allow`**
+   * Add `@wsrpc` alias and `server.fs.allow` in `apps/agrita/frontend/vite.config.ts`.
    * Replace duplicated `frontend/src/lib/wsrpc.ts` with a 1-line reexport: `export * from '@wsrpc/wsrpc';`.
    * Verify complete frontend compilation (`npm run build`).
 4. **Phase 4: Dead Code Elimination**
@@ -255,8 +358,8 @@ graph TD
 
 ---
 
-## 9. Conclusion
+## 10. Conclusion
 
 RFC 0004 permanently resolves architectural friction by decoupling the general-purpose `rsgi-wsrpc` runtime from domain applications. 
 
-By eliminating duplicate code, unifying documentation at the framework level, and standardizing on the canonical `rsgi_wsrpc` namespace, the architecture achieves complete clarity, developer velocity, and enterprise-grade maintainability.
+By eliminating duplicate code, establishing that users belong strictly to applications, unifying documentation at the framework level, and guaranteeing exact server symmetry, the architecture achieves complete clarity, developer velocity, and enterprise-grade maintainability.
