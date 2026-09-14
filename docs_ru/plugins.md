@@ -80,8 +80,13 @@ oauth:
 
 ## 3. Паттерн фасадов приложений
 
-Прикладные проекты (такие как Agrita) сохраняют 100% обратную совместимость через реэкспорт компонентов плагинов:
+Прикладные проекты (Agrita, CRM, Showcase) организуют доступ к плагинам через доменные фасады или используют их напрямую:
 ```python
+# Вариант 1: Прямое использование плагинов фреймворка
+from plugins.db import Base, async_session
+from plugins.auth.models import User
+
+# Вариант 2: Фасадный реэкспорт внутри приложения (app/system/)
 # app/system/db.py
 from plugins.db import *
 
@@ -91,4 +96,14 @@ from plugins.auth.models import *
 # app/system/auth/handlers.py
 from plugins.auth.handlers import *
 ```
-Это позволяет плавно разделять ядро, плагины и приложение без необходимости переписывать код бизнес-модулей.
+Это позволяет гибко комбинировать ядро, плагины и приложение без дублирования кода.
+
+---
+
+## 4. Живой пример использования
+
+Рабочий пример использования плагинов `plugins.db` и ролевой модели `plugins.auth` доступен в демонстрационном приложении:
+- `examples/showcase/server.py`
+- `examples/showcase/models.py`
+- `examples/showcase/handlers.py`
+

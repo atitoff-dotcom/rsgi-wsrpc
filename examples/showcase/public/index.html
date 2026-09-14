@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rsgi-wsrpc Showcase: Реактивный Python Фреймворк</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --card-bg: rgba(22, 30, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #172554 0%, #0b0f19 75%);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 1100px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* HEADER */
+    header {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-block h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-block p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 8px 16px;
+      border-radius: 9999px;
+      border: 1px solid var(--card-border);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+      transition: background 0.3s ease;
+    }
+    .pulse-dot.online {
+      background: var(--accent-emerald);
+      box-shadow: 0 0 10px var(--accent-emerald);
+    }
+
+    .metric-item {
+      font-size: 0.85rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-cyan);
+    }
+
+    /* GRID */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 24px;
+    }
+    @media (max-width: 640px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+    }
+
+    .card-header h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tag {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    /* CONTROLS & BUTTONS */
+    .btn {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn:hover {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+    }
+    .btn:active { transform: translateY(0); }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.14);
+      box-shadow: none;
+    }
+    .btn-danger {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fda4af;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+      padding: 4px 8px;
+      font-size: 0.8rem;
+    }
+    .btn-danger:hover {
+      background: rgba(244, 63, 94, 0.3);
+      box-shadow: none;
+    }
+
+    input, select {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border 0.2s;
+    }
+    input:focus, select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    /* TABULAR COMPRESSION STATS */
+    .compression-meter {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+    }
+    .meter-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent-emerald);
+      margin-top: 4px;
+    }
+    .meter-lbl {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* TASK LIST */
+    .task-form {
+      display: flex;
+      gap: 10px;
+    }
+    .task-form input { flex: 1; }
+
+    .task-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .task-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+    .task-item:hover { background: rgba(0, 0, 0, 0.4); }
+    .task-item.done .task-title {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+    .task-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+    .task-title {
+      font-size: 0.92rem;
+    }
+    .priority-badge {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .priority-high { background: rgba(244, 63, 94, 0.2); color: #fda4af; }
+    .priority-normal { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .priority-low { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+
+    /* PROGRESS BAR FOR STREAM */
+    .progress-track {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--card-border);
+      border-radius: 9999px;
+      height: 12px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .progress-fill {
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* CODE & LOGS */
+    pre, .log-box {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #a5f3fc;
+      overflow-x: auto;
+      max-height: 160px;
+    }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 12px;
+    }
+    footer a { color: var(--accent-cyan); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- HEADER -->
+  <header>
+    <div class="logo-block">
+      <h1>⚡ rsgi-wsrpc <span style="font-weight:400; opacity:0.7">Showcase</span></h1>
+      <p>Rust RSGI (Granian) + WSRPC (JSON-RPC 2.0) + Tabular Compression (RFC 0002)</p>
+    </div>
+    <div class="status-bar">
+      <div class="status-badge">
+        <div class="pulse-dot" id="ws-dot"></div>
+        <span id="ws-status">Подключение...</span>
+      </div>
+      <div class="metric-item" id="latency-val">RTT: -- ms</div>
+    </div>
+  </header>
+
+  <!-- GRID OF FEATURES -->
+  <div class="grid-2">
+
+    <!-- 1. TABULAR DATA COMPRESSION -->
+    <div class="card">
+      <div class="card-header">
+        <h2>📊 Табличное сжатие (RFC 0002)</h2>
+        <span class="tag">Zero Dict Overhead</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted)">
+        Сравнение размера сырого JSON со схемой <code>$tabular: true</code>. Названия колонок передаются 1 раз, данные — матрицей строк.
+      </p>
+
+      <div class="compression-meter">
+        <div>
+          <div class="meter-lbl">Сырой JSON</div>
+          <div class="meter-val" id="raw-bytes" style="color:var(--text-muted)">0 B</div>
+        </div>
+        <div>
+          <div class="meter-lbl">Tabular (Wire)</div>
+          <div class="meter-val" id="tabular-bytes">0 B</div>
+        </div>
+        <div>
+          <div class="meter-lbl">Экономия</div>
+          <div class="meter-val" id="saved-pct" style="color:var(--accent-emerald)">0%</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-secondary" onclick="fetchTasks()">🔄 Запросить список (Tabular)</button>
+      </div>
+
+      <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Сырой пакет по проводу ($tabular):</div>
+      <pre id="tabular-preview">{"$tabular": true, "fields": ["id", "title", "completed", "priority", "created_at"], "rows": [...]}</pre>
+    </div>
+
+    <!-- 2. REACTIVE TASK TRACKER -->
+    <div class="card">
+      <div class="card-header">
+        <h2>📝 Реактивный трекер (plugins.db)</h2>
+        <span class="tag">SQLAlchemy 2.0 + SQLite</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted)">
+        Откройте страницу во второй вкладке: добавление или чекбокс моментально синхронизируются без перезагрузок и поллинга.
+      </p>
+
+      <form class="task-form" onsubmit="handleAddTask(event)">
+        <input type="text" id="task-title-input" placeholder="Новая задача..." required>
+        <select id="task-priority-input">
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+        </select>
+        <button class="btn" type="submit">➕ Добавить</button>
+      </form>
+
+      <div class="task-list" id="task-container">
+        <!-- Tasks dynamically rendered here -->
+      </div>
+    </div>
+
+    <!-- 3. MULTI-RETURN STREAMING -->
+    <div class="card">
+      <div class="card-header">
+        <h2>🚀 Multi-return Стриминг</h2>
+        <span class="tag">stream: true</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted)">
+        Тяжелая серверная операция отправляет промежуточные этапы и процент прогресса прямо в едином WSRPC-запросе без блокировки сокета.
+      </p>
+
+      <button class="btn" id="stream-btn" onclick="runHeavyJob()">▶ Запустить тяжелую операцию</button>
+
+      <div class="progress-track">
+        <div class="progress-fill" id="stream-progress"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted)">
+        <span id="stream-stage">Ожидание запуска...</span>
+        <span id="stream-pct">0%</span>
+      </div>
+
+      <div class="log-box" id="stream-logs">// Лог промежуточных чанков сервера...</div>
+    </div>
+
+    <!-- 4. RBAC & SECURITY -->
+    <div class="card">
+      <div class="card-header">
+        <h2>🔐 Роли и Безопасность (plugins.auth)</h2>
+        <span class="tag">RBAC @rpc_method</span>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted)">
+        Проверка прав на уровне декоратора ядра. Метод <code>admin.system_info</code> требует строгую роль <code>admin</code>.
+      </p>
+
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="font-size:0.85rem; color:var(--text-muted)">Текущая роль сессии:</span>
+        <select id="role-select" onchange="changeRole(this.value)">
+          <option value="guest">Guest (Гость)</option>
+          <option value="user">User (Пользователь)</option>
+          <option value="admin">Admin (Администратор)</option>
+        </select>
+      </div>
+
+      <div>
+        <button class="btn btn-secondary" onclick="callAdminMethod()">⚡ Вызвать admin.system_info</button>
+      </div>
+
+      <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Результат RPC-вызова:</div>
+      <pre id="admin-result">// Ответ появится здесь...</pre>
+    </div>
+
+  </div>
+
+  <footer>
+    rsgi-wsrpc &bull; Open-Source высокоскоростной фреймворк для Python &bull;
+    <a href="https://github.com/atitoff-dotcom/rsgi-wsrpc" target="_blank">GitHub Repository</a>
+  </footer>
+</div>
+
+<script>
+// --- МИНИМАЛЬНЫЙ КЛИЕНТ WSRPC (JSON-RPC 2.0 + TABULAR) ---
+class WSRPC {
+  constructor(url) {
+    this.url = url;
+    this.ws = null;
+    this.reqId = 1;
+    this.pending = new Map();
+    this.streamListeners = new Map();
+    this.notificationHandlers = new Map();
+  }
+
+  connect() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    this.ws = new WebSocket(`${proto}//${host}/`);
+
+    this.ws.onopen = () => {
+      document.getElementById('ws-dot').classList.add('online');
+      document.getElementById('ws-status').textContent = 'Подключено (WSRPC)';
+      fetchTasks();
+    };
+
+    this.ws.onclose = () => {
+      document.getElementById('ws-dot').classList.remove('online');
+      document.getElementById('ws-status').textContent = 'Отключено (Реконнект...)';
+      setTimeout(() => this.connect(), 2000);
+    };
+
+    this.ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+
+      // 1. Нотификация от сервера (без id)
+      if (!msg.id && msg.method) {
+        const handler = this.notificationHandlers.get(msg.method);
+        if (handler) handler(msg.params);
+        return;
+      }
+
+      // 2. Потоковый чанк multi-return (stream: true)
+      if (msg.result && msg.result.stream === true && this.streamListeners.has(msg.id)) {
+        const listener = this.streamListeners.get(msg.id);
+        listener(msg.result.data);
+        return;
+      }
+
+      // 3. Финальный ответ RPC
+      if (this.pending.has(msg.id)) {
+        const { resolve, reject, startTime } = this.pending.get(msg.id);
+        this.pending.delete(msg.id);
+        this.streamListeners.delete(msg.id);
+
+        const rtt = Math.round(performance.now() - startTime);
+        document.getElementById('latency-val').textContent = `RTT: ${rtt} ms`;
+
+        if (msg.error) {
+          reject(msg.error);
+        } else {
+          resolve({ result: msg.result, raw: evt.data });
+        }
+      }
+    };
+  }
+
+  call(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = this.reqId++;
+      const payload = { jsonrpc: '2.0', method, params, id };
+      this.pending.set(id, { resolve, reject, startTime: performance.now() });
+      this.ws.send(JSON.stringify(payload));
+    });
+  }
+
+  requestStream(method, params, onChunk) {
+    return new Promise((resolve, reject) => {
+      const id = this.reqId++;
+      const payload = { jsonrpc: '2.0', method, params, id };
+      this.pending.set(id, { resolve, reject, startTime: performance.now() });
+      if (onChunk) this.streamListeners.set(id, onChunk);
+      this.ws.send(JSON.stringify(payload));
+    });
+  }
+
+  onNotification(method, handler) {
+    this.notificationHandlers.set(method, handler);
+  }
+}
+
+// Декомпрессор Tabular Data (RFC 0002)
+function unpackTabular(data) {
+  if (!data || typeof data !== 'object') return data;
+  if (data.$tabular === true && Array.isArray(data.fields) && Array.isArray(data.rows)) {
+    const fields = data.fields;
+    return data.rows.map(row => {
+      const obj = {};
+      fields.forEach((f, idx) => { obj[f] = row[idx]; });
+      return obj;
+    });
+  }
+  return data;
+}
+
+// Инициализация WSRPC
+const rpc = new WSRPC();
+rpc.connect();
+
+// Подписка на изменение задач из других вкладок
+rpc.onNotification('tasks.changed', () => {
+  fetchTasks();
+});
+
+// --- UI ЛОГИКА И ХЕНДЛЕРЫ ---
+
+async function fetchTasks() {
+  try {
+    const res = await rpc.call('tasks.list');
+    const rawWireString = res.raw;
+
+    // Считаем размер сырых данных в байтах
+    const wireBytes = new Blob([rawWireString]).size;
+    document.getElementById('tabular-bytes').textContent = wireBytes + ' B';
+    document.getElementById('tabular-preview').textContent = JSON.stringify(res.result, null, 2);
+
+    // Распаковываем табличные данные
+    const tasks = unpackTabular(res.result);
+
+    // Считаем размер эквивалентного несжатого JSON (списка словарей)
+    const rawJsonStr = JSON.stringify(tasks);
+    const rawBytes = new Blob([rawJsonStr]).size;
+    document.getElementById('raw-bytes').textContent = rawBytes + ' B';
+
+    // Считаем процент экономии
+    const savedPct = rawBytes > 0 ? Math.max(0, Math.round((1 - (wireBytes / rawBytes)) * 100)) : 0;
+    document.getElementById('saved-pct').textContent = savedPct + '%';
+
+    renderTasks(tasks);
+  } catch (err) {
+    console.error('Ошибка загрузки задач:', err);
+  }
+}
+
+function renderTasks(tasks) {
+  const container = document.getElementById('task-container');
+  if (!tasks || tasks.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:12px; text-align:center;">Задач пока нет. Добавьте первую!</div>';
+    return;
+  }
+
+  container.innerHTML = tasks.map(t => `
+    <div class="task-item ${t.completed ? 'done' : ''}">
+      <div class="task-info">
+        <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask(${t.id})">
+        <span class="task-title">${escapeHtml(t.title)}</span>
+        <span class="priority-badge priority-${t.priority}">${t.priority}</span>
+      </div>
+      <button class="btn btn-danger" onclick="deleteTask(${t.id})">Удалить</button>
+    </div>
+  `).join('');
+}
+
+async function handleAddTask(e) {
+  e.preventDefault();
+  const titleInput = document.getElementById('task-title-input');
+  const priorityInput = document.getElementById('task-priority-input');
+  const title = titleInput.value.trim();
+  if (!title) return;
+
+  try {
+    await rpc.call('tasks.add', { title, priority: priorityInput.value });
+    titleInput.value = '';
+    fetchTasks();
+  } catch (err) {
+    alert('Ошибка добавления: ' + (err.message || err));
+  }
+}
+
+async function toggleTask(id) {
+  try {
+    await rpc.call('tasks.toggle', { id });
+    fetchTasks();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function deleteTask(id) {
+  try {
+    await rpc.call('tasks.delete', { id });
+    fetchTasks();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function runHeavyJob() {
+  const btn = document.getElementById('stream-btn');
+  const pBar = document.getElementById('stream-progress');
+  const pStage = document.getElementById('stream-stage');
+  const pPct = document.getElementById('stream-pct');
+  const logs = document.getElementById('stream-logs');
+
+  btn.disabled = true;
+  logs.textContent = '';
+  pBar.style.width = '0%';
+
+  function appendLog(msg) {
+    logs.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+    logs.scrollTop = logs.scrollHeight;
+  }
+
+  appendLog('Отправка WSRPC stream запроса...');
+
+  try {
+    const res = await rpc.requestStream('stream.heavy_job', {}, (chunk) => {
+      pBar.style.width = chunk.progress + '%';
+      pPct.textContent = chunk.progress + '%';
+      pStage.textContent = chunk.message;
+      appendLog(`[ЧАНК] ${chunk.progress}%: ${chunk.message}`);
+    });
+
+    pBar.style.width = '100%';
+    pPct.textContent = '100%';
+    pStage.textContent = res.result.message;
+    appendLog(`[ФИНАЛ] Завершено: ${res.result.summary}`);
+  } catch (err) {
+    appendLog(`[ОШИБКА] ${err.message || err}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function changeRole(role) {
+  try {
+    const res = await rpc.call('auth.set_role', { role });
+    const resBox = document.getElementById('admin-result');
+    resBox.textContent = `Роль сессии успешно изменена на: ${res.result.role}`;
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function callAdminMethod() {
+  const resBox = document.getElementById('admin-result');
+  resBox.textContent = 'Запрос admin.system_info...';
+  try {
+    const res = await rpc.call('admin.system_info');
+    resBox.textContent = JSON.stringify(res.result, null, 2);
+  } catch (err) {
+    resBox.textContent = `✖ ДОСТУП ЗАПРЕЩЕН (RPCError):\nКод: ${err.code}\nСообщение: ${err.message}`;
+  }
+}
+
+function escapeHtml(text) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+</script>
+
+</body>
+</html>

@@ -96,7 +96,7 @@ my_project/
 │   ├── router.py                   # HTTP routing on top of RSGI (@http_route)
 │   ├── security.py                 # Argon2id, JWT tokens, RSA cryptography
 │   ├── session.py                  # JsonRpcSession, @rpc_method, ContextVars, Rate-Limiter
-│   └── upload.py                   # Two-phase O(1) RAM upload engine (2PC) & Coordinator
+│   └── tabular.py                  # Deterministic tabular payload compression (RFC 0002, pack_tabular)
 │
 ├── app/                            # 📦 APPLICATION & PLUGIN LAYER
 │   ├── system/                     # 🔌 System Plugins (Official Batteries)
@@ -236,7 +236,28 @@ Modules in `app/<module>/` are strictly decoupled. When assigning an AI agent a 
 
 ## 🚀 Quickstart in 60 Seconds
 
-### 1. Minimal Server (`main.py`)
+### ⚡ Option A: Interactive Showcase Demo (1-Click)
+
+The repository includes a ready-to-run interactive showcase (`examples/showcase/`):
+
+```bash
+# Linux / macOS:
+./examples/showcase/run.sh
+
+# macOS (without terminal):
+# Double-click examples/showcase/run_mac.command directly in Finder!
+
+# Windows (cmd):
+examples\showcase\run.bat
+
+# Windows (PowerShell):
+.\examples\showcase\run.ps1
+```
+The launcher automatically provisions a `.venv`, installs dependencies, and boots the Granian server. Open `http://127.0.0.1:8080` in your browser to inspect real-time WSRPC operations, the reactive database, Tabular payload compression, and streaming progress.
+
+---
+
+### 🛠 Option B: Minimal Server (`main.py`)
 ```python
 from core.session import rpc_method, JsonRpcSession
 from core.lifecycle import on_startup
@@ -300,11 +321,10 @@ The network core resides in the `core/` directory and exposes the following buil
   * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
   * High-throughput file streams, webhooks, and health checks.
 
-* **[core/upload.py](../core/upload.py)**:
-  * `UploadCoordinator`: In-memory two-phase transaction coordinator.
-  * Stream HTTP bytes directly to disk with constant **O(1) RAM** footprint (`stream_request_to_disk`).
-  * On-the-fly SHA-256 calculation.
-  * Automatic rollback (`await tx.rollback()`, partial file deletion) upon connection loss.
+* **[core/tabular.py](tabular_compression.md)**:
+  * Deterministic tabular payload compression (RFC 0002, `pack_tabular`, `@tabular_response`).
+  * Cuts 50–70% of network traffic by transmitting property schemas once and packing records into a 2D matrix.
+  * Direct SQL tuple optimization bypasses dictionary allocations, minimizing Python GC overhead.
 
 * **[core/security.py](../core/security.py)**:
   * Password hashing using **Argon2id**.

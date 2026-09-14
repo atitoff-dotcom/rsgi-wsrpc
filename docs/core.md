@@ -19,7 +19,7 @@ The core is engineered following Clean Architecture principles:
    * [Session Termination Hooks (session.register_on_close)](#session-termination-hooks-sessionregister_on_close)
    * [Built-in Guardrails (Rate Limiting & Timeouts)](#built-in-guardrails-rate-limiting--timeouts)
 3. [Routing & RSGI Protocol: core/router.py](#3-routing--rsgi-protocol-corerouterpy)
-4. [Two-Phase File Upload: core/upload.py](#4-two-phase-file-upload-coreuploadpy)
+4. [Tabular Payload Compression (RFC 0002): core/tabular.py](#4-tabular-payload-compression-rfc-0002-coretabularpy)
 5. [Server Lifecycle: core/lifecycle.py](#5-server-lifecycle-corelifecyclepy)
 6. [Security & Cryptography: core/security.py](#6-security--cryptography-coresecuritypy)
 7. [Configuration: core/lib/config.py](#7-configuration-corelibconfigpy)
@@ -43,20 +43,21 @@ The core is engineered following Clean Architecture principles:
        ┌────────────────────────▼────────┐ ┌────────▼───────────────────────┐
        │         core/router.py          │ │          core/session.py       │
        │   @http_route(path, methods)    │ │   JsonRpcSession, WSRPC Engine │
-       │   - Streaming upload (/upload)  │ │   - @rpc_method registry       │
+       │   - Streaming endpoints         │ │   - @rpc_method registry       │
        │   - Health checks (/health)     │ │   - ContextVars (user, session)│
        │   - Direct binary endpoints     │ │   - Rate Limiting (Token Bucket│
        └─────────────────────────────────┘ │   - Multi-return streaming     │
                                            │   - Symmetric Client Calls     │
+                                           │   - register_on_close (2PC)    │
                                            └────────────────┬───────────────┘
                                                             │
                                   ┌─────────────────────────┴───────────────┐
                                   │                                         │
                    ┌──────────────▼──────────────┐           ┌──────────────▼──────────────┐
-                   │       core/upload.py        │           │      core/lifecycle.py      │
-                   │   UploadCoordinator & 2PC   │           │   @on_startup, __rsgi_init__│
-                   │   - O(1) RAM Streamer       │           │   - Async Schema Migrations │
-                   │   - Auto-rollback on close  │           │   - Cache Warming           │
+                   │       core/tabular.py       │           │      core/lifecycle.py      │
+                   │   RFC 0002 Compression     │           │   @on_startup, __rsgi_init__│
+                   │   - pack_tabular / unpack   │           │   - Async Schema Migrations │
+                   │   - 50-70% traffic saving   │           │   - Cache Warming           │
                    └─────────────────────────────┘           └─────────────────────────────┘
 ```
 
@@ -241,53 +242,40 @@ async def payment_webhook(scope, proto):
 
 ---
 
-## 4. Two-Phase File Upload: `core/upload.py`
+## 4. Tabular Payload Compression: `core/tabular.py` (RFC 0002)
 
-The `core/upload.py` module implements a two-phase commit (2PC) protocol for safe, isolated file ingestion:
+The `core/tabular.py` module provides deterministic serialization of collection payloads into the `$tabular: true` format, eliminating dictionary key redundancy and cutting 50–70% of network payload size.
 
 ```python
-from core.upload import UploadCoordinator, stream_request_to_disk
+from core.tabular import pack_tabular, tabular_response
 
-# 1. Initialize transaction via WSRPC method
-@rpc_method("files.begin_upload")
-async def begin_upload(session, params):
-    total_files = params.get("file_count", 1)
-    tx = await UploadCoordinator.create_transaction(
-        session=session,
-        expected_files=total_files
-    )
-    return {"folder_hash": tx.folder_hash}
+# 1. Automatic response serialization via decorator
+@rpc_method("tasks.list")
+@tabular_response(fields=["id", "title", "completed", "priority"])
+async def list_tasks(session, params):
+    tasks = await fetch_tasks()
+    return [t.to_dict() for t in tasks]
 
-# 2. Stream bytes in HTTP route (O(1) RAM)
-@http_route("/upload", methods=["POST"])
-async def handle_upload(scope, proto):
-    folder_hash = get_header(scope, "x-folder-hash")
-    file_name = get_header(scope, "x-file-name")
-    
-    tx = UploadCoordinator.get_transaction(folder_hash)
-    if not tx:
-        proto.response_str(status=404, headers=[], body="Transaction not found")
-        return
-        
-    # Stream directly to disk while calculating SHA-256
-    file_path = tx.temp_dir / file_name
-    size, sha256_hex = await stream_request_to_disk(proto, file_path)
-    
-    tx.register_file(file_name, size, sha256_hex)
-    proto.response_str(status=200, headers=[], body='{"status":"uploaded"}')
-
-# 3. Commit transaction
-@rpc_method("files.commit_upload")
-async def commit_upload(session, params):
-    folder_hash = params.get("folder_hash")
-    tx = UploadCoordinator.get_transaction(folder_hash)
-    
-    # Atomic rename from temporary directory to production storage
-    final_dir = await tx.commit(target_base_dir="/files")
-    return {"status": "committed", "path": str(final_dir)}
+# 2. Raw SQL cursor optimization (zero dictionary allocations)
+@rpc_method("logs.get_recent")
+async def get_recent_logs(session, params):
+    async with db.execute("SELECT id, level, message FROM logs") as cursor:
+        rows = await cursor.fetchall()  # Raw tuples
+        return pack_tabular(rows, fields=["id", "level", "message"])
 ```
 
-> **Important**: If the client closes the connection midway through uploading, `UploadCoordinator` immediately triggers `await tx.rollback()`, wiping partial files from the disk.
+### Socket Transaction Support & Rollback (2PC Lifecycle Hooks)
+
+The `rsgi-wsrpc` network core is strictly decoupled from the filesystem and contains no hardcoded temporary paths (`/tmp/...`). For two-phase transactions (such as file uploads or distributed tasks), the core exposes a universal session termination hook: `session.register_on_close`:
+
+```python
+# Bind transaction rollback to the WebSocket session lifetime:
+session.register_on_close(lambda s: my_transaction.rollback())
+```
+
+If the client closes the browser tab or disconnects midway through an operation, the registered callback is automatically executed by the core, preventing leaked temp files or orphaned resources.
+
+> For a complete guide to building two-phase file ingestion, see [docs/files.md](files.md).
 
 ---
 

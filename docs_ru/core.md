@@ -19,7 +19,7 @@
    * [Хуки закрытия сессии (session.register_on_close)](#хуки-закрытия-сессии-sessionregister_on_close)
    * [Встроенная защита (Rate Limiting и таймауты)](#встроенная-защита-rate-limiting-и-таймауты)
 3. [Роутинг и протокол RSGI: core/router.py](#3-роутинг-и-протокол-rsgi-corerouterpy)
-4. [Двухфазная загрузка файлов: core/upload.py](#4-двухфазная-загрузка-файлов-coreuploadpy)
+4. [Табличное сжатие данных (RFC 0002): core/tabular.py](#4-табличное-сжатие-данных-rfc-0002-coretabularpy)
 5. [Жизненный цикл сервера: core/lifecycle.py](#5-жизненный-цикл-сервера-corelifecyclepy)
 6. [Безопасность и криптография: core/security.py](#6-безопасность-и-криптография-coresecuritypy)
 7. [Конфигурация: core/lib/config.py](#7-конфигурация-corelibconfigpy)
@@ -43,11 +43,12 @@
        ┌────────────────────────▼────────┐ ┌────────▼───────────────────────┐
        │         core/router.py          │ │          core/session.py       │
        │   @http_route(path, methods)    │ │   JsonRpcSession, WSRPC Engine │
-       │   - Streaming upload (/upload)  │ │   - @rpc_method registry       │
+       │   - Streaming endpoints         │ │   - @rpc_method registry       │
        │   - Health checks (/health)     │ │   - ContextVars (user, session)│
        │   - Direct binary endpoints     │ │   - Rate Limiting (Token Bucket│
        └─────────────────────────────────┘ │   - Multi-return streaming     │
                                            │   - Symmetric Client Calls     │
+                                           │   - register_on_close (2PC)    │
                                            └────────────────┬───────────────┘
                                                             │
                                   ┌─────────────────────────┴───────────────┐
@@ -241,53 +242,40 @@ async def payment_webhook(scope, proto):
 
 ---
 
-## 4. Двухфазная загрузка файлов: `core/upload.py`
+## 4. Табличное сжатие полезной нагрузки: `core/tabular.py` (RFC 0002)
 
-Модуль `core/upload.py` реализует транзакционный протокол двухфазного коммита (2PC) для безопасного приема файлов:
+Модуль `core/tabular.py` реализует детерминированную сериализацию списков данных в компактный табличный формат `$tabular: true`, устраняющий дублирование строковых названий ключей и экономящий 50–70% сетевого трафика.
 
 ```python
-from core.upload import UploadCoordinator, stream_request_to_disk
+from core.tabular import pack_tabular, tabular_response
 
-# 1. Открытие транзакции в WSRPC-методе
-@rpc_method("files.begin_upload")
-async def begin_upload(session, params):
-    total_files = params.get("file_count", 1)
-    tx = await UploadCoordinator.create_transaction(
-        session=session,
-        expected_files=total_files
-    )
-    return {"folder_hash": tx.folder_hash}
+# 1. Автоматическая упаковка ответа декоратором
+@rpc_method("tasks.list")
+@tabular_response(fields=["id", "title", "completed", "priority"])
+async def list_tasks(session, params):
+    tasks = await fetch_tasks()
+    return [t.to_dict() for t in tasks]
 
-# 2. Потоковый прием байтов в HTTP-роуте (O(1) RAM)
-@http_route("/upload", methods=["POST"])
-async def handle_upload(scope, proto):
-    folder_hash = get_header(scope, "x-folder-hash")
-    file_name = get_header(scope, "x-file-name")
-    
-    tx = UploadCoordinator.get_transaction(folder_hash)
-    if not tx:
-        proto.response_str(status=404, headers=[], body="Transaction not found")
-        return
-        
-    # Потоковая запись прямо на диск с подсчетом SHA-256
-    file_path = tx.temp_dir / file_name
-    size, sha256_hex = await stream_request_to_disk(proto, file_path)
-    
-    tx.register_file(file_name, size, sha256_hex)
-    proto.response_str(status=200, headers=[], body='{"status":"uploaded"}')
-
-# 3. Фиксация транзакции (Commit)
-@rpc_method("files.commit_upload")
-async def commit_upload(session, params):
-    folder_hash = params.get("folder_hash")
-    tx = UploadCoordinator.get_transaction(folder_hash)
-    
-    # Атомарное перемещение из временной папки в постоянную
-    final_dir = await tx.commit(target_base_dir="/files")
-    return {"status": "committed", "path": str(final_dir)}
+# 2. Прямая оптимизация сырых SQL-кортежей (без создания промежуточных dict)
+@rpc_method("logs.get_recent")
+async def get_recent_logs(session, params):
+    async with db.execute("SELECT id, level, message FROM logs") as cursor:
+        rows = await cursor.fetchall()  # Сырые кортежи
+        return pack_tabular(rows, fields=["id", "level", "message"])
 ```
 
-> **Важно**: Если клиент закрыл вкладку посреди загрузки — `UploadCoordinator` мгновенно выполнит `await tx.rollback()`, физически удалив недогруженные файлы с диска.
+### Поддержка сокетных транзакций и отката (2PC Lifecycle Hooks)
+
+Сетевое ядро `rsgi-wsrpc` полностью изолировано от файловой системы и не содержит жестко зашитых временных путей (`/tmp/...`). Для реализации двухфазных транзакций (2PC, загрузка файлов, распределенные операции) ядро предоставляет универсальный сокетный хук закрытия сессии `session.register_on_close`:
+
+```python
+# Привязка отката транзакции к жизненному циклу WebSocket-соединения:
+session.register_on_close(lambda s: my_transaction.rollback())
+```
+
+Если клиент закрыл браузер или произошел обрыв сети до завершения операции, зарегистрированный колбэк автоматически выполняется ядром, предотвращая зависание временных ресурсов или сиротских файлов.
+
+> Полное руководство по реализации двухфазной потоковой загрузки файлов см. в [docs_ru/files.md](files.md).
 
 ---
 

@@ -63,16 +63,16 @@
 
 ## 3. Использование на бэкенде (Python)
 
-Все хелперы находятся в модуле `app.system.tabular`:
+Все хелперы встроены в ядро фреймворка и находятся в модуле `core.tabular` (а также реэкспортируются в `core.session`):
 
 ### `pack_tabular`
 ```python
-from app.system.tabular import pack_tabular
+from core.tabular import pack_tabular
 
-@rpc_method("forum.get_topics")
-async def get_topics(session, params):
-    topics = await fetch_topics()
-    return pack_tabular(topics)
+@rpc_method("tasks.list")
+async def get_tasks(session, params):
+    tasks = await fetch_tasks()
+    return pack_tabular(tasks)
 ```
 
 ### Оптимизация сырых SQL-кортежей (ноль словарей)
@@ -87,12 +87,12 @@ async def get_recent_logs(session, params):
 
 ### Декоратор `@tabular_response`
 ```python
-from app.system.tabular import tabular_response
+from core.tabular import tabular_response
 
-@rpc_method("admin.list_users")
+@rpc_method("tasks.list")
 @tabular_response()
-async def list_users(session, params):
-    return await query_users()
+async def list_tasks(session, params):
+    return await query_tasks()
 ```
 
 ---

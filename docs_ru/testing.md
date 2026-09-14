@@ -33,7 +33,7 @@ python tests/run.py --target=stage
 
 ### Пример вывода раннера:
 ```text
-=== Agrita Backend Test Harness ===
+=== rsgi-wsrpc Backend Test Harness ===
   Цель:      LOCAL (http://127.0.0.1:8080 | ws://127.0.0.1:8080/)
   Сьюты:     auth, smart_cache, forum, files, load
 

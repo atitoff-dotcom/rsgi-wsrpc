@@ -96,7 +96,7 @@ my_project/
 │   ├── router.py                   # HTTP-роутинг поверх RSGI (@http_route)
 │   ├── security.py                 # Argon2id, JWT токены, RSA криптография
 │   ├── session.py                  # JsonRpcSession, @rpc_method, ContextVars, Rate-Limiting
-│   └── upload.py                   # Двухфазная загрузка O(1) RAM (2PC) и UploadCoordinator
+│   └── tabular.py                  # Детерминированное табличное сжатие (RFC 0002, pack_tabular)
 │
 ├── app/                            # 📦 СЛОЙ ПРИЛОЖЕНИЯ И ПЛАГИНОВ
 │   ├── system/                     # 🔌 Системные плагины ядра (Official Batteries)
@@ -234,7 +234,28 @@ rsgi-wsrpc:   ███ (~350 токенов)  ──► ЭКОНОМИЯ ТОК
 
 ## 🚀 Быстрый старт за 60 секунд
 
-### 1. Минимальный сервер (`main.py`)
+### ⚡ Вариант A: Запуск интерактивного Showcase (в 1 клик)
+
+В репозиторий встроено готовое полнофункциональное демонстрационное приложение (`examples/showcase/`):
+
+```bash
+# Linux / macOS:
+./examples/showcase/run.sh
+
+# macOS (без терминала):
+# Дважды кликните на examples/showcase/run_mac.command прямо в Finder!
+
+# Windows (cmd):
+examples\showcase\run.bat
+
+# Windows (PowerShell):
+.\examples\showcase\run.ps1
+```
+Скрипт автоматически подготовит `.venv`, установит зависимости и запустит сервер. Откройте `http://127.0.0.1:8080` — и тестируйте WSRPC, реактивную базу данных, сжатие Tabular и мультиретурн стриминг в живом интерфейсе.
+
+---
+
+### 🛠 Вариант B: Минимальный сервер своими руками (`main.py`)
 ```python
 from core.session import rpc_method, JsonRpcSession
 from core.lifecycle import on_startup
@@ -298,11 +319,10 @@ await client.callStream('task.run_long', {}, (chunk) => {
   * Декоратор `@http_route(path, methods)` для регистрации прямых HTTP-обработчиков поверх RSGI.
   * Прием сырых стримов байтов, вебхуков и healthcheck без лишнего оверхеда.
 
-* **[core/upload.py](core/upload.py)**:
-  * Координатор двухфазной транзакционной загрузки `UploadCoordinator`.
-  * Потоковый прием файлов из протокола RSGI с расходом оперативной памяти **O(1) RAM** (`stream_request_to_disk`).
-  * Вычисление контрольной суммы SHA-256 на лету в процессе приема байтов.
-  * Автоматический откат (`await tx.rollback()`, удаление временных файлов) при обрыве соединения.
+* **[core/tabular.py](docs_ru/tabular_compression.md)**:
+  * Детерминированное табличное сжатие полезной нагрузки (RFC 0002, `pack_tabular`, `@tabular_response`).
+  * Экономия 50–70% трафика за счет однократной передачи названий полей и упаковки данных в матрицу строк.
+  * Прямая оптимизация сырых SQL-кортежей без промежуточных словарей — ноль лишней нагрузки на сборщик мусора Python.
 
 * **[core/security.py](core/security.py)**:
   * Надежное хэширование паролей на базе стойкого алгоритма **Argon2id**.

@@ -54,7 +54,7 @@ The subsystem is decoupled into three clean abstraction layers:
          │      files_count: 3, title: "..."                      │
          │    }) ────────────────────────────────────────────────►│ 
          │                                                        │ • Allocates folder_hash: 'a8F9cK2mX1zL'
-         │                                                        │ • Creates /tmp/agrita_uploads/a8F9cK2mX1zL/
+         │                                                        │ • Creates /tmp/app_uploads/a8F9cK2mX1zL/
          │ ◄── Chunk 1: { stage: "ready", folder: "a8F9cK2mX1zL" }│ • Registers tx with WS session
          │                                                        │
          │ 2. Streaming Byte Upload (HTTP POST via RSGI):         │
@@ -74,12 +74,12 @@ The subsystem is decoupled into three clean abstraction layers:
 
 ### 3.2. Automatic Rollback on Disconnect
 
-In the session management module (`core/session.py`), every active `JsonRpcSession` tracks pending `UploadTransaction` objects.
+In the session management module (`core/session.py`), every active `JsonRpcSession` supports clean resource teardown via `session.register_on_close(callback)`.
 
 If the client closes the browser, loses network connectivity, or drops the connection:
-1. The session termination hook `session.on_close` is executed.
-2. The core queries uncommitted transactions.
-3. The temporary folder `/tmp/agrita_uploads/<folder_hash>` is immediately removed:
+1. The session termination hook is executed.
+2. The uncommitted transaction rollback callback runs.
+3. The temporary folder `/tmp/app_uploads/<folder_hash>` is immediately removed:
    ```python
    shutil.rmtree(temp_folder_path, ignore_errors=True)
    ```

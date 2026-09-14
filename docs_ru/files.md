@@ -2,7 +2,7 @@
 
 ## 1. Введение и концепция
 
-В реактивном фреймворке **Agrita** работа с файлами построена на гибридной модели:
+В реактивном фреймворке **rsgi-wsrpc** работа с файлами построена на гибридной модели:
 1. **WSRPC (JSON-RPC 2.0)** выступает координатором транзакций, прав доступа, реактивного прогресса и метаданных.
 2. **HTTP POST (RSGI)** используется как потоковая магистраль для передачи сырых бинарных данных.
 3. **Nginx** осуществляет высокопроизводительную раздачу подтвержденных файлов без участия Python-воркеров.
@@ -125,7 +125,7 @@ CREATE INDEX idx_file_owner ON file_metadata (owner_id);
 
 ```nginx
 location /files/ {
-    alias /home/alex/agrita-stage/files/;
+    alias /var/www/my_app/files/;
     expires 1y;
     add_header Cache-Control "public, max-age=31536000, immutable";
     access_log off;
@@ -184,7 +184,7 @@ async def create_ticket(session, title: str, description: str, files_count: int 
 
 ## 7. Преимущества для архитектуры фреймворка
 
-| Характеристика | Традиционный подход (REST Multipart / Base64) | Архитектура Agrita Core Upload |
+| Характеристика | Традиционный подход (REST Multipart / Base64) | Архитектура rsgi-wsrpc Core Upload |
 | :--- | :--- | :--- |
 | **Память (RAM)** | Загрузка всего файла в буфер процесса | Потоковая запись чанков на диск O(1) RAM |
 | **Сбои сети** | Висячие файлы на диске, засорение мусором | Автоматический откат при дисконнекте WebSocket |

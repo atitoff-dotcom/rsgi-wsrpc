@@ -31,10 +31,10 @@ python tests/run.py load
 python tests/run.py --target=stage
 ```
 
-### Example Runner Output:
+### Example Output:
 ```text
-=== Agrita Backend Test Harness ===
-  Цель:      LOCAL (http://127.0.0.1:8080 | ws://127.0.0.1:8080/)
+=== rsgi-wsrpc Backend Test Harness ===
+  Target:    LOCAL (http://127.0.0.1:8080 | ws://127.0.0.1:8080/)
   Сьюты:     auth, smart_cache, forum, files, load
 
 ▶ Сьют: auth (4 тестов)

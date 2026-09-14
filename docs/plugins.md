@@ -80,8 +80,13 @@ oauth:
 
 ## 3. Application Facade Pattern
 
-Applications (such as Agrita) preserve backward compatibility by re-exporting plugin components:
+Applications (such as Agrita, CRM systems, or the Showcase demo) configure plugin access via domain facades or consume them directly:
 ```python
+# Option 1: Direct imports from plugins
+from plugins.db import Base, async_session
+from plugins.auth.models import User
+
+# Option 2: Application facade re-exports (app/system/)
 # app/system/db.py
 from plugins.db import *
 
@@ -91,4 +96,14 @@ from plugins.auth.models import *
 # app/system/auth/handlers.py
 from plugins.auth.handlers import *
 ```
-This guarantees that existing business modules require zero refactoring while keeping the framework modular and extensible.
+This guarantees flexible composition between the core, official plugins, and domain modules with zero code duplication.
+
+---
+
+## 4. Live Reference Implementation
+
+A fully functional showcase demonstrating `plugins.db` and the `plugins.auth` role model is available in:
+- `examples/showcase/server.py`
+- `examples/showcase/models.py`
+- `examples/showcase/handlers.py`
+

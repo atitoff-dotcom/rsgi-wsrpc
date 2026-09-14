@@ -1,0 +1,8 @@
+security:
+  secret_key: "showcase_secret_key_minimum_32_bytes_long_random_demo"
+  session_idle_timeout: 3600
+  password_iterations: 10000
+  token_expire_hours: 24
+
+database:
+  url: "sqlite:///./showcase.db"

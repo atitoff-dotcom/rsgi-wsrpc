@@ -63,16 +63,16 @@ Tabular payload compression separates the schema from the data:
 
 ## 3. Server-Side Usage (Python)
 
-All tabular helpers reside in `app.system.tabular`:
+All tabular helpers are built into the framework core and reside in `core.tabular` (and are also re-exported by `core.session`):
 
 ### `pack_tabular`
 ```python
-from app.system.tabular import pack_tabular
+from core.tabular import pack_tabular
 
-@rpc_method("forum.get_topics")
-async def get_topics(session, params):
-    topics = await fetch_topics()
-    return pack_tabular(topics)
+@rpc_method("tasks.list")
+async def get_tasks(session, params):
+    tasks = await fetch_tasks()
+    return pack_tabular(tasks)
 ```
 
 ### Direct SQL Tuple Optimization (Zero Dicts)
@@ -87,12 +87,12 @@ async def get_recent_logs(session, params):
 
 ### The `@tabular_response` Decorator
 ```python
-from app.system.tabular import tabular_response
+from core.tabular import tabular_response
 
-@rpc_method("admin.list_users")
+@rpc_method("tasks.list")
 @tabular_response()
-async def list_users(session, params):
-    return await query_users()
+async def list_tasks(session, params):
+    return await query_tasks()
 ```
 
 ---
