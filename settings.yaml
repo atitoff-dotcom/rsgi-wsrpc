@@ -1,8 +1,3 @@
-# Дефолтные настройки сетевого рантайма rsgi-wsrpc
-server:
-  host: "127.0.0.1"
-  port: 8080
-
 # Безопасность транспортных сессий WSRPC
 security:
   secret_key: "CHANGE_ME_IN_PRODUCTION_SECRET_KEY_MIN_32_BYTES"

@@ -8,6 +8,7 @@
 ## 🧭 Table of Contents
 1. [Core Philosophy & Manifesto](#-core-philosophy--manifesto)
 2. [Architecture: Core + Plugins + Application](#-architecture-core--plugins--application)
+   * [Architecture for Beginners with Diagrams (docs/architecture_for_beginners.md)](docs/architecture_for_beginners.md)
    * [Recommended Project Structure (Directory Tree)](#-recommended-project-structure-directory-tree)
 3. [Comparison: rsgi-wsrpc vs Django vs FastAPI](#-comparison-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [🤖 AI-Native: Token-Efficient & Purpose-Built for LLMs](#-ai-native-token-efficient--purpose-built-for-llms)
