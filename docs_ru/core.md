@@ -91,6 +91,31 @@ async def restart_service(session: JsonRpcSession, params: dict):
     return {"status": "restarting"}
 ```
 
+### Кастомные роли и расширение ролевой модели (Custom Roles)
+
+Ядро фреймворка не навязывает жесткий список ролей. Класс `UserRole` специально унаследован от стандартного типа `str`, что позволяет приложению определять любые собственные роли предметной области:
+
+```python
+# 1. Объявление собственных ролей в приложении (app/roles.py)
+from core.constants import UserRole
+
+class AppRole(UserRole):
+    MODERATOR = "moderator"
+    OPERATOR  = "operator"
+    MANAGER   = "manager"
+
+@rpc_method("content.moderate", role=AppRole.MODERATOR)
+async def moderate_content(session: JsonRpcSession, params: dict):
+    return {"status": "approved"}
+
+# 2. Использование прямых строк без классов
+@rpc_method("orders.dispatch", role="operator")
+async def dispatch_order(session: JsonRpcSession, params: dict):
+    return {"status": "dispatched"}
+```
+
+> **Правило Superadmin Bypass**: Пользователь с ролью `admin` считается суперадминистратором ядра и имеет безусловный доступ ко всем защищенным RPC-методам, независимо от указанного ограничения роли (`role="moderator"`, `role="operator"` и др.).
+
 ### Контекстные переменные (`ContextVars`)
 
 Во время исполнения хендлера ядро автоматически проставляет асинхронные контекстные переменные. Вам **не нужно** передавать объект сессии или пользователя через десятки внутренних функций:

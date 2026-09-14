@@ -359,7 +359,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 
 ### 2. Authentication & User Plugin (`plugins/auth`)
 * **Features**:
-  * `User` model, role hierarchy (`admin`, `moderator`, `user`, `guest`).
+  * `User` model, flexible role architecture (dynamic roles in `auth_role` DB table, custom `UserRole` subclasses, superadmin bypass).
   * **Row-Level Security (RLS)**: base classes `BasicSecureModel` and `RowSecureModel` for tenant/owner scoping.
   * Reliable session extension via `RefreshToken` and multi-device tracking in `ActiveSession`.
   * Context-based user retrieval anywhere without passing parameters:
@@ -373,7 +373,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ### 3. Two-Phase File Upload Plugin (`plugins/files`)
 * Comprehensive architecture: see **[docs/files.md](docs/files.md)**.
 * **Two-Phase Commit Workflow**:
-  1. Client initiates upload transaction: server provisions isolated `/tmp/agrita_uploads/<folder_hash>/`.
+  1. Client initiates upload transaction: server provisions isolated `/tmp/app_uploads/<folder_hash>/`.
   2. Client streams files via `POST /upload`. Bytes stream directly to disk without memory buffering.
   3. If client disconnects — core triggers `session.on_close` and erases the temp folder immediately.
   4. On completion — folder moves atomically to production storage `/files/<folder_hash>/` in 0 milliseconds.

@@ -91,6 +91,31 @@ async def restart_service(session: JsonRpcSession, params: dict):
     return {"status": "restarting"}
 ```
 
+### Custom Roles & Extending the Role Model
+
+The framework core imposes no rigid or closed set of roles. The `UserRole` class is explicitly subclassed from Python's standard `str`, enabling applications to define arbitrary domain roles:
+
+```python
+# 1. Declare custom application roles (app/roles.py)
+from core.constants import UserRole
+
+class AppRole(UserRole):
+    MODERATOR = "moderator"
+    OPERATOR  = "operator"
+    MANAGER   = "manager"
+
+@rpc_method("content.moderate", role=AppRole.MODERATOR)
+async def moderate_content(session: JsonRpcSession, params: dict):
+    return {"status": "approved"}
+
+# 2. Use plain string literals directly
+@rpc_method("orders.dispatch", role="operator")
+async def dispatch_order(session: JsonRpcSession, params: dict):
+    return {"status": "dispatched"}
+```
+
+> **Superadmin Bypass Rule**: A user holding the `admin` role is treated as the core superuser and is granted unconditional access to all role-restricted RPC methods, regardless of the specific role specified in `role=` (e.g. an admin can invoke methods restricted to `moderator` or `operator`).
+
 ### Context Variables (`ContextVars`)
 
 During RPC handler execution, the core automatically assigns asynchronous context variables. You **never** need to pass the session or user object down through internal call stacks:
