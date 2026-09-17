@@ -83,13 +83,67 @@ oauth:
 
 ---
 
-## 3. Паттерн фасадов приложений
+---
+
+## 4. Плагин сырых и бинарных WebSocket-сессий (`plugins.raw_ws`)
+
+Предоставляет поддержку специализированных низкоуровневых и бинарных двунаправленных WebSocket-протоколов (например, телеметрия контроллеров, Protobuf, потоковые аудио/видео каналы) по выделенным URL путям в обход стандартного WSRPC JSON-RPC.
+
+### Возможности
+- **Изоляция и Zero-Overhead**: Выделенный URL перехватывается до WSRPC, не создавая накладных расходов на JSON-сериализацию.
+- **64-битные уникальные ID сессий (Snowflake-style)**: Гарантированное отсутствие коллизий между несколькими воркерами Granian (`--workers N`) и после перезапусков.
+- **Явная передача `session_id` в обработчик приёма**: Сигнатура `(session_id, data, session)` обеспечивает немедленный доступ к идентификатору сессии без поиска в контексте.
+- **Двунаправленный обмен**: Методы `send_bytes(data: bytes)` и `send_str(data: str)`.
+- **Гарантированное отслеживание дисконнекта**: Хуки `@handler.on_connect`, `@handler.on_disconnect` и `session.on_close(...)`.
+- **Реестр сессий и рассылка**: `send_to_session(session_id, data)` и `broadcast_raw(data, path=None)`.
+
+### Пример использования
+```python
+from plugins.raw_ws import raw_ws_route, RawWebSocketSession
+from core.logger import logger
+
+@raw_ws_route("/ws/telemetry")
+async def on_telemetry(session_id: int, data: bytes, session: RawWebSocketSession):
+    # Явный session_id и сырые байты от клиента
+    logger.info(f"[Telemetry] Пакет от сессии {session_id}, байт: {len(data)}")
+    # Двунаправленный ответ клиенту
+    await session.send_bytes(b"ACK")
+
+@on_telemetry.on_connect
+async def on_connect(session: RawWebSocketSession):
+    logger.info(f"[Telemetry] Устройство подключено: {session.session_id}")
+
+@on_telemetry.on_disconnect
+async def on_disconnect(session: RawWebSocketSession):
+    logger.warning(f"[Telemetry] Обрыв связи: {session.session_id}")
+```
+
+### Подключение в точку входа сервера (`main.py`)
+```python
+from plugins.raw_ws import dispatch_raw_ws
+
+async def app(scope, proto):
+    if scope.proto == "websocket":
+        # Плагин перехватывает зарегистрированные роуты (/ws/telemetry и т.д.)
+        if await dispatch_raw_ws(scope, proto):
+            return
+
+        # Для остальных путей работает стандартный WSRPC
+        ws = await proto.accept()
+        session = JsonRpcSession(ws, next(GLOBAL_SESSION_COUNTER))
+        await session.start()
+```
+
+---
+
+## 5. Паттерн фасадов приложений
 
 Прикладные проекты (Agrita, CRM, Showcase) организуют доступ к плагинам через доменные фасады или используют их напрямую:
 ```python
 # Вариант 1: Прямое использование плагинов фреймворка
 from plugins.db import Base, async_session
 from plugins.auth.models import User
+from plugins.raw_ws import raw_ws_route
 
 # Вариант 2: Фасадный реэкспорт внутри приложения (app/system/)
 # app/system/db.py
@@ -105,10 +159,30 @@ from plugins.auth.handlers import *
 
 ---
 
-## 4. Живой пример использования
+## 6. Живой пример использования
 
 Рабочий пример использования плагинов `plugins.db` и ролевой модели `plugins.auth` доступен в демонстрационном приложении:
 - `examples/showcase/server.py`
 - `examples/showcase/models.py`
 - `examples/showcase/handlers.py`
+
+---
+
+## 7. Официальный реестр плагинов и спецификаций RFC
+
+В следующей таблице зафиксированы официальные плагины-батарейки фреймворка и их стандартизированные RFC-спецификации:
+
+| Имя плагина | Статус | Спецификация RFC | Описание |
+| :--- | :--- | :--- | :--- |
+| **`plugins.db`** | ✅ Стабилен | Ядро платформы | Асинхронный пул подключений SQLAlchemy 2.0 и декларативный Base |
+| **`plugins.auth`** | ✅ Стабилен | Ядро платформы | RBAC, RLS (`RowSecureModel`), OAuth2, скользящие сессии |
+| **`plugins.raw_ws`** | ✅ Стабилен | Ядро платформы | Сырые и бинарные двунаправленные WebSocket-сессии с 64-битными ID |
+| **`plugins.smart_cache`**| ⚡ В разработке | [RFC 0001](rfc/0001-smart-cache.md) | Реактивный кэш с обратной связью и 0 мс задержкой интерфейса |
+| **`plugins.admin`** | 📝 На рассмотрении | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Реактивная панель администрирования и корпоративный CRUD-движок |
+| **`plugins.files`** | 📝 На рассмотрении | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Двухфазный коммит загрузок (2PC) и kernel-level отдача статики |
+| **`plugins.broadcast`** | 📝 На рассмотрении | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | Высокопроизводительная Zero-Copy рассылка событий и таргетинг |
+| **`plugins.gateway`** | 📝 На рассмотрении | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API Gateway для WSRPC и авто-генерация документации Swagger |
+| **`plugins.discussions`**| 📝 На рассмотрении | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Иерархический форум, вложенные треды и эмодзи-реакции |
+| **`plugins.messages`** | 📝 На рассмотрении | [RFC 0009](rfc/0009-direct-messaging-and-chat.md) | Личные сообщения 1-на-1, чат и полиморфные вложения |
+| **`plugins.articles`** | 📝 На рассмотрении | [RFC 0010](rfc/0010-knowledge-base-and-articles-cms.md) | База знаний Markdown, FAQ и система управления статьями |
 

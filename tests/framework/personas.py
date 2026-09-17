@@ -93,11 +93,16 @@ class PersonaManager:
     async def _ensure_local_user(cls, login: str, password: str, role: str = "user"):
         """Вспомогательный метод для гарантии наличия пользователя в локальной БД."""
         try:
-            from app.system.db import async_session
+            try:
+                from plugins.db import async_session
+                from plugins.auth.models import User, Role
+                from plugins.auth.core import system_bypass_ctx
+            except ImportError:
+                from app.system.db import async_session
+                from app.system.auth.models import User, Role
+                from app.system.auth.core import system_bypass_ctx
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
-            from app.system.auth.models import User, Role
-            from app.system.auth.core import system_bypass_ctx
             from core.logger import logger
 
             system_bypass_ctx.set(True)

@@ -83,15 +83,67 @@ oauth:
 
 ---
 
-## 3. Application Facade Pattern
+## 4. Raw & Binary WebSocket Sessions Plugin (`plugins.raw_ws`)
 
-Applications (such as Agrita, CRM systems, or the Showcase demo) configure plugin access via domain facades or consume them directly:
+Provides dedicated support for low-level, binary, and bidirectional WebSocket protocols (e.g. controller telemetry, Protobuf, audio/video streaming) over custom HTTP URL paths, bypassing standard WSRPC JSON-RPC parsing.
+
+### Features
+- **Strict Isolation & Zero Overhead**: Dedicated URLs are intercepted prior to WSRPC without incurring JSON serialization penalties.
+- **64-bit Unique Session IDs (Snowflake-style)**: 100% collision-free across multiple Granian worker processes (`--workers N`) and server restarts.
+- **Explicit `session_id` in Message Handlers**: Signature `(session_id, data, session)` gives immediate access to the session identity without context lookup overhead.
+- **Bidirectional Streaming**: `send_bytes(data: bytes)` and `send_str(data: str)`.
+- **Reliable Disconnect Tracking**: `@handler.on_connect`, `@handler.on_disconnect`, and `session.on_close(...)` hooks executed deterministically.
+- **Session Registry & Broadcasting**: `send_to_session(session_id, data)` and `broadcast_raw(data, path=None)`.
+
+### Usage Example
 ```python
-# Option 1: Direct imports from plugins
+from plugins.raw_ws import raw_ws_route, RawWebSocketSession
+from core.logger import logger
+
+@raw_ws_route("/ws/telemetry")
+async def on_telemetry(session_id: int, data: bytes, session: RawWebSocketSession):
+    # Explicit session_id and raw bytes from the client
+    logger.info(f"[Telemetry] Frame from session {session_id}, bytes: {len(data)}")
+    # Bidirectional response
+    await session.send_bytes(b"ACK")
+
+@on_telemetry.on_connect
+async def on_connect(session: RawWebSocketSession):
+    logger.info(f"[Telemetry] Device connected: {session.session_id}")
+
+@on_telemetry.on_disconnect
+async def on_disconnect(session: RawWebSocketSession):
+    logger.warning(f"[Telemetry] Connection lost: {session.session_id}")
+```
+
+### Integration in Server Entrypoint (`main.py`)
+```python
+from plugins.raw_ws import dispatch_raw_ws
+
+async def app(scope, proto):
+    if scope.proto == "websocket":
+        # Dispatch to raw_ws plugin routes (/ws/telemetry etc.)
+        if await dispatch_raw_ws(scope, proto):
+            return
+
+        # Fallback to standard WSRPC for default endpoints
+        ws = await proto.accept()
+        session = JsonRpcSession(ws, next(GLOBAL_SESSION_COUNTER))
+        await session.start()
+```
+
+---
+
+## 5. Application Facade Pattern
+
+Domain applications (Agrita, CRM, Showcase) organize access to framework plugins via internal facades or import them directly:
+```python
+# Option 1: Direct import of framework plugins
 from plugins.db import Base, async_session
 from plugins.auth.models import User
+from plugins.raw_ws import raw_ws_route
 
-# Option 2: Application facade re-exports (app/system/)
+# Option 2: Internal domain facade re-exports (app/system/)
 # app/system/db.py
 from plugins.db import *
 
@@ -105,10 +157,30 @@ This guarantees flexible composition between the core, official plugins, and dom
 
 ---
 
-## 4. Live Reference Implementation
+## 6. Live Reference Implementation
 
 A fully functional showcase demonstrating `plugins.db` and the `plugins.auth` role model is available in:
 - `examples/showcase/server.py`
 - `examples/showcase/models.py`
 - `examples/showcase/handlers.py`
+
+---
+
+## 7. Official Plugin Roadmap & RFC Registry
+
+The following table tracks official framework plugins and their standardized architectural specifications:
+
+| Plugin Name | Status | RFC Specification | Description |
+| :--- | :--- | :--- | :--- |
+| **`plugins.db`** | ✅ Stable | Core Framework | Asynchronous SQLAlchemy 2.0 connection pool & declarative Base |
+| **`plugins.auth`** | ✅ Stable | Core Framework | RBAC, RLS (`RowSecureModel`), OAuth2, sliding session lifecycle |
+| **`plugins.raw_ws`** | ✅ Stable | Core Framework | Raw & binary bidirectional WebSocket sessions with 64-bit IDs |
+| **`plugins.smart_cache`**| ⚡ In Progress | [RFC 0001](rfc/0001-smart-cache.md) | Event-driven feedback cache with 0 ms perceived latency |
+| **`plugins.admin`** | 📝 In Review | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Reactive enterprise administration & CRUD engine |
+| **`plugins.files`** | 📝 In Review | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Two-phase commit (2PC) streaming uploads & Nginx offload |
+| **`plugins.broadcast`** | 📝 In Review | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | High-throughput zero-copy WebSocket push & targeting |
+| **`plugins.gateway`** | 📝 In Review | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API gateway for WSRPC & auto-generated Swagger UI |
+| **`plugins.discussions`**| 📝 In Review | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Hierarchical forum, nested threads & emoji reactions |
+| **`plugins.messages`** | 📝 In Review | [RFC 0009](rfc/0009-direct-messaging-and-chat.md) | 1-on-1 direct messaging, chat & polymorphic context |
+| **`plugins.articles`** | 📝 In Review | [RFC 0010](rfc/0010-knowledge-base-and-articles-cms.md) | Markdown knowledge base, FAQ & article CMS |
 
