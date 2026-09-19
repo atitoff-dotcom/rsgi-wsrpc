@@ -348,16 +348,25 @@ data = decode_jwt_token(token)
 
 ---
 
-## 7. Конфигурация: `core/lib/config.py`
+## 7. Конфигурация: `core/lib/config.py` (Code-First)
 
-Конфигурация проекта считывается из `settings.yaml` и доступна через глобальный объект `settings`:
+Фреймворк следует паттерну **Code-First и 12-Factor App** без обязательных внешних YAML-файлов. Настройки задаются напрямую в коде, подтягиваются из переменных окружения или используют безопасные dev-дефолты:
 
 ```python
-from core.lib.config import settings
+import os
+from core.lib.config import configure, settings
 
-# Доступ к полям
-db_url = settings.db.get("url")
-upload_dir = settings.storage.get("upload_dir", "/files")
+# 1. Программная конфигурация в коде
+configure(
+    secret_key=os.getenv("SECRET_KEY", "ваш-секретный-ключ-для-продакшена"),
+    session_idle_timeout=900,
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/app.db"),
+    files_path=os.getenv("FILES_PATH", "./files")
+)
+
+# 2. Доступ к параметрам в любом месте проекта
+secret = settings.security.secret_key
+db_url = settings.get("database_url")
 ```
 
 ---

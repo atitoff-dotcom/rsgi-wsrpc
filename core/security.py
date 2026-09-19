@@ -1,25 +1,34 @@
 # core/security.py
 import os
 import uuid
+import logging
 from datetime import datetime, timedelta, timezone
-import hashlib  # Добавляем импорт для хэширования
+import hashlib
 import jwt
-import yaml
 
 ALGORITHM = "HS256"
+logger = logging.getLogger("core.security")
 
 from core.lib.config import settings
 
-_sec_key = None
-try:
-    _sec_key = settings.security.secret_key
-except AttributeError:
-    pass
+def get_secret_key() -> str:
+    key = None
+    try:
+        key = settings.security.secret_key
+    except Exception:
+        pass
+    if not key:
+        key = os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-in-production")
+    if key == "dev-insecure-secret-key-change-in-production":
+        if not getattr(get_secret_key, "_warned", False):
+            logger.warning(
+                "[SECURITY] Внимание: используется небезопасный dev secret_key по умолчанию! "
+                "Задайте secret_key в коде через configure(secret_key=...) или через переменную окружения SECRET_KEY!"
+            )
+            get_secret_key._warned = True
+    return key
 
-if not _sec_key:
-    raise ValueError("Критическая ошибка: Секретный ключ (security.secret_key) не задан в конфигурации! Никаких дефолтных ключей!")
-
-SECRET_KEY = _sec_key
+SECRET_KEY = get_secret_key()
 
 
 def create_access_token(user_id: int, username: str, roles: list[str], user_agent: str) -> tuple[str, str, datetime]:
@@ -43,12 +52,12 @@ def create_access_token(user_id: int, username: str, roles: list[str], user_agen
         "fpt": ua_fingerprint  # Зашиваем Fingerprint в Payload токена
     }
 
-    token_str = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token_str = jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
     return token_str, jti, expires_at
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    return jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
 
 
 import os
@@ -145,5 +154,3 @@ def decrypt_rsa(private_key_pem: str, encrypted_base64: str) -> str:
     )
     
     return decrypted.decode('utf-8')
-
-

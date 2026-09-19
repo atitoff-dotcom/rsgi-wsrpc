@@ -145,26 +145,23 @@
 
 ---
 
-## 5. Как настраивать плагины из приложения
+## 5. Как настраивать плагины из приложения (Code-First)
 
-Плагин не зашивает параметры намертво, а читает их из настроек приложения ([app_settings.yaml](file:///home/alex/hydro_calc/App/agrita/backend/app_settings.yaml)):
+Плагины не зашивают параметры намертво, а настраиваются напрямую в коде приложения через `configure(...)` или переменные окружения:
 
-```yaml
-# Настройки сессий и авторизации
-auth:
-  session_lifetime_days: 30   # Сколько дней живет токен активности
-  max_active_sessions: 10     # Максимум активных устройств на пользователя
+```python
+from core.lib.config import configure
 
-# Настройки входа через социальные сети
-oauth:
-  vk:
-    enabled: true
-    client_id: "12345"
-    client_secret: "секрет"
-  yandex:
-    enabled: true
-    client_id: "67890"
-    client_secret: "секрет"
+configure(
+    auth={
+        "session_lifetime_days": 30,   # Сколько дней живет токен активности
+        "max_active_sessions": 10,     # Максимум активных устройств на пользователя
+    },
+    oauth={
+        "vk": {"enabled": True, "client_id": "12345", "client_secret": "секрет"},
+        "yandex": {"enabled": True, "client_id": "67890", "client_secret": "секрет"}
+    }
+)
 ```
 
 Если секция `auth` не указана в YAML, плагин автоматически использует безопасные значения по умолчанию (30 дней, 10 сессий).

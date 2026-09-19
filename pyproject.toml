@@ -29,8 +29,30 @@ dependencies = [
     "granian>=1.6.0",
     "orjson>=3.9.0",
     "pyjwt>=2.8.0",
-    "pyyaml>=6.0.1",
     "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+db = [
+    "sqlalchemy>=2.0.0",
+]
+sqlite = [
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.19.0",
+]
+postgres = [
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.29.0",
+]
+mysql = [
+    "sqlalchemy>=2.0.0",
+    "asyncmy>=0.2.9",
+]
+full = [
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.19.0",
+    "asyncpg>=0.29.0",
+    "asyncmy>=0.2.9",
 ]
 
 [project.urls]

@@ -13,7 +13,7 @@
 
 ### Ключевые компоненты
 - `Base`: Центральный декларативный базовый класс (`DeclarativeBase`), обеспечивающий единый `metadata` между всеми плагинами и таблицами приложения (внешние ключи FK работают бесшовно).
-- `engine`: Асинхронный движок SQLAlchemy, настраиваемый через `app_settings.yaml` (PostgreSQL / SQLite).
+- `engine`: Асинхронный движок SQLAlchemy, настраиваемый в коде через `configure(database_url=...)` или переменную окружения `DATABASE_URL` (PostgreSQL / SQLite / MySQL).
 - `async_session`: Фабрика асинхронных сессий (`async_sessionmaker[AsyncSession]`) с поддержкой контекстного менеджера (`async with async_session() as db:`).
 - `apply_pagination(stmt, page, limit)`: Стандартная утилита пагинации запросов.
 
@@ -36,7 +36,7 @@ async def get_records():
 
 ### Возможности
 - **Скользящие сессии (Sliding Expiration)**:
-  - Настраиваемый срок жизни сессии в `app_settings.yaml` (по умолчанию 30 дней).
+  - Настраиваемый срок жизни сессии через `configure(...)` или переменную окружения (по умолчанию 30 дней).
   - Каждое успешное обновление токена (`login.refresh`) автоматически сдвигает срок действия токена вперед на `session_lifetime_days`.
   - Автоматическая очистка просроченных токенов при авторизации.
   - Контроль лимита одновременных устройств пользователя (`max_active_sessions`, по умолчанию 10).
@@ -64,21 +64,21 @@ async def get_records():
   - `auth.terminate_session`: Дистанционное завершение конкретной сессии.
   - `auth.active_sessions_stream`: Реактивный поток изменений сессий в реальном времени.
 
-### Конфигурация (`app_settings.yaml`)
-```yaml
-auth:
-  session_lifetime_days: 30
-  max_active_sessions: 10
+### Конфигурация (Code-First)
+```python
+from core.lib.config import configure
 
-oauth:
-  vk:
-    enabled: true
-    client_id: "..."
-    client_secret: "..."
-  yandex:
-    enabled: true
-    client_id: "..."
-    client_secret: "..."
+configure(
+    database_url="postgresql+asyncpg://user:pass@127.0.0.1:5432/mydb",
+    auth={
+        "session_lifetime_days": 30,
+        "max_active_sessions": 10,
+    },
+    oauth={
+        "vk": {"enabled": True, "client_id": "...", "client_secret": "..."},
+        "yandex": {"enabled": True, "client_id": "...", "client_secret": "..."}
+    }
+)
 ```
 
 ---

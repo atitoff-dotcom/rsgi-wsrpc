@@ -26,6 +26,14 @@ from core.router import http_route, HTTP_ROUTES
 from core.logger import setup_logging, logger
 from core.lifecycle import on_startup, run_startup_callbacks
 
+from core.lib.config import configure
+
+# Code-First конфигурация Showcase (без YAML-файлов)
+configure(
+    secret_key=os.getenv("SECRET_KEY", "showcase-demo-secret-key-12345"),
+    database_url=os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{os.path.join(SHOWCASE_DIR, 'showcase.db')}")
+)
+
 # Импорты плагина БД и моделей showcase
 from plugins.db import engine, Base
 from models import Task

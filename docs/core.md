@@ -348,16 +348,25 @@ data = decode_jwt_token(token)
 
 ---
 
-## 7. Configuration: `core/lib/config.py`
+## 7. Configuration: `core/lib/config.py` (Code-First)
 
-Project settings parsed from `settings.yaml` and accessible anywhere via the global `settings` object:
+The framework follows a **Code-First & 12-Factor App** configuration pattern without mandatory external YAML files. Settings can be configured directly in code, loaded from environment variables, or rely on sensible development defaults:
 
 ```python
-from core.lib.config import settings
+import os
+from core.lib.config import configure, settings
 
-# Access properties
-db_url = settings.db.get("url")
-upload_dir = settings.storage.get("upload_dir", "/files")
+# 1. Programmatic configuration in code
+configure(
+    secret_key=os.getenv("SECRET_KEY", "your-production-secret-key"),
+    session_idle_timeout=900,
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/app.db"),
+    files_path=os.getenv("FILES_PATH", "./files")
+)
+
+# 2. Accessing properties anywhere
+secret = settings.security.secret_key
+db_url = settings.get("database_url")
 ```
 
 ---

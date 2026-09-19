@@ -13,7 +13,7 @@ Provides asynchronous SQLAlchemy 2.0 database session management, connection eng
 
 ### Key Components
 - `Base`: Central declarative base (`DeclarativeBase`) providing shared metadata across all plugins and application tables.
-- `engine`: Asynchronous SQLAlchemy engine configured from `app_settings.yaml` (PostgreSQL / SQLite).
+- `engine`: Asynchronous SQLAlchemy engine configured via `configure(database_url=...)` or environment variable `DATABASE_URL` (PostgreSQL / SQLite / MySQL).
 - `async_session`: Asynchronous session maker factory (`async_sessionmaker[AsyncSession]`) supporting context managers (`async with async_session() as db:`).
 - `apply_pagination(stmt, page, limit)`: Standard pagination utility.
 
@@ -36,7 +36,7 @@ Enterprise-ready authentication and authorization system supporting Row-Level Se
 
 ### Features
 - **Sliding Session Expiration**:
-  - Configurable session lifetime via `app_settings.yaml` (default: 30 days).
+  - Configurable session lifetime via `configure(...)` or environment (default: 30 days).
   - Every valid token refresh extends the token expiration window by `session_lifetime_days`.
   - Stale refresh tokens are cleaned up automatically.
   - Active session limit enforcement (`max_active_sessions`, default: 10 per user).
@@ -64,21 +64,20 @@ Enterprise-ready authentication and authorization system supporting Row-Level Se
   - `auth.terminate_session`: Remote session termination.
   - `auth.active_sessions_stream`: Real-time reactive stream of user session changes.
 
-### Configuration (`app_settings.yaml`)
-```yaml
-auth:
-  session_lifetime_days: 30
-  max_active_sessions: 10
+### Configuration (Code-First)
+```python
+from core.lib.config import configure
 
-oauth:
-  vk:
-    enabled: true
-    client_id: "..."
-    client_secret: "..."
-  yandex:
-    enabled: true
-    client_id: "..."
-    client_secret: "..."
+configure(
+    database_url="postgresql+asyncpg://user:pass@127.0.0.1:5432/mydb",
+    auth={
+        "session_lifetime_days": 30,
+        "max_active_sessions": 10,
+    },
+    oauth={
+        "vk": {"enabled": True, "client_id": "...", "client_secret": "..."},
+        "yandex": {"enabled": True, "client_id": "...", "client_secret": "..."}
+    }
 ```
 
 ---

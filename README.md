@@ -50,8 +50,8 @@ The architecture enforces a strict unidirectional dependency hierarchy (Clean Ar
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       1. YOUR APPLICATION (Application)                 │
 │                                                                         │
-│   Knows about all components: loads configuration (settings.yaml),      │
-│   activates necessary system plugins, and executes domain business logic│
+│   Knows about all components: configures application in code (Code-First),
+│   activates necessary system plugins, and executes domain business logic
 │   Examples: Social Network, CRM, Forum, Customer Portal, IoT Server.    │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ consumes and aggregates
@@ -89,7 +89,7 @@ Below is the production-tested repository layout, clearly demarcating the networ
 my_project/
 ├── core/                           # ⚡ NETWORK CORE (RSGI + WSRPC)
 │   ├── lib/
-│   │   └── config.py               # Settings loader for settings.yaml
+│   │   └── config.py               # Code-First configuration & configure()
 │   ├── constants.py                # System constants and roles (UserRole)
 │   ├── lifecycle.py                # Async hooks @on_startup and @on_shutdown
 │   ├── logger.py                   # High-performance structured logging
@@ -145,7 +145,6 @@ my_project/
 │   └── files.md                    # Two-phase file upload guide (2PC)
 │
 ├── main.py                         # 🚀 Entrypoint: plugin composition, RSGI application
-├── settings.yaml                   # ⚙️ Configuration (database, ports, secrets)
 └── pyproject.toml                  # 📦 Dependencies and package manifest
 ```
 
@@ -234,7 +233,24 @@ Modules in `app/<module>/` are strictly decoupled. When assigning an AI agent a 
 
 ---
 
-## 🚀 Quickstart in 60 Seconds
+## 🚀 Installation & Quickstart
+
+### 📦 Installation via PIP
+
+Install the minimal core (Granian RSGI, Orjson, WSRPC, Cryptography):
+```bash
+pip install rsgi-wsrpc
+```
+
+Or install with database support and drivers depending on your target stack:
+```bash
+pip install "rsgi-wsrpc[sqlite]"      # Async SQLite (aiosqlite + SQLAlchemy 2.0)
+pip install "rsgi-wsrpc[postgres]"    # Async PostgreSQL (asyncpg + SQLAlchemy 2.0)
+pip install "rsgi-wsrpc[mysql]"       # Async MySQL (asyncmy + SQLAlchemy 2.0)
+pip install "rsgi-wsrpc[full]"        # All drivers and plugins included
+```
+
+---
 
 ### ⚡ Option A: Interactive Showcase Demo (1-Click)
 

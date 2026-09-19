@@ -1,7 +1,0 @@
-# Безопасность транспортных сессий WSRPC
-security:
-  secret_key: "CHANGE_ME_IN_PRODUCTION_SECRET_KEY_MIN_32_BYTES"
-  session_idle_timeout: 900
-  password_iterations: 10000
-  token_expire_hours: 24
-  login_rpc: ""

@@ -144,26 +144,23 @@ SQLAlchemy tracks all relationships in a unified metadata schema. Foreign keys a
 
 ---
 
-## 5. Configuring Plugins from the Application
+## 5. Configuring Plugins from the Application (Code-First)
 
-Plugins do not hardcode parameters; they read configuration from the application's YAML file ([app_settings.yaml](file:///home/alex/hydro_calc/App/agrita/backend/app_settings.yaml)):
+Plugins do not hardcode parameters; they are configured directly in application code via `configure(...)` or environment variables:
 
-```yaml
-# Session and Authentication Settings
-auth:
-  session_lifetime_days: 30   # Active session sliding lifetime in days
-  max_active_sessions: 10     # Maximum concurrent active sessions per user
+```python
+from core.lib.config import configure
 
-# OAuth2 Identity Providers
-oauth:
-  vk:
-    enabled: true
-    client_id: "12345"
-    client_secret: "secret"
-  yandex:
-    enabled: true
-    client_id: "67890"
-    client_secret: "secret"
+configure(
+    auth={
+        "session_lifetime_days": 30,   # Active session sliding lifetime in days
+        "max_active_sessions": 10,     # Maximum concurrent active sessions per user
+    },
+    oauth={
+        "vk": {"enabled": True, "client_id": "12345", "client_secret": "secret"},
+        "yandex": {"enabled": True, "client_id": "67890", "client_secret": "secret"}
+    }
+)
 ```
 
 If the `auth` section is omitted, the plugin automatically falls back to safe defaults (30 days, 10 sessions).
