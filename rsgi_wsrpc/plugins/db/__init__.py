@@ -3,7 +3,7 @@
 Официальный плагин базы данных фреймворка rsgi-wsrpc.
 """
 
-from plugins.db.session import (
+from .session import (
     Base,
     engine,
     async_session,

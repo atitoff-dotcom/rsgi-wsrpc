@@ -8,8 +8,8 @@ from typing import Any
 from sqlalchemy import event, or_, inspect
 from sqlalchemy.orm import ORMExecuteState, Session
 
-from plugins.auth.core import current_user_ctx, system_bypass_ctx, BasicSecureModel, RowSecureModel
-from core.logger import logger
+from .core import current_user_ctx, system_bypass_ctx, BasicSecureModel, RowSecureModel
+from rsgi_wsrpc.core.logger import logger
 
 
 @event.listens_for(Session, "do_orm_execute")

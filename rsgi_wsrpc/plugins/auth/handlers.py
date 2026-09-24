@@ -18,15 +18,15 @@ import json
 from sqlalchemy import select, delete, or_
 from sqlalchemy.orm import selectinload
 
-from core.session import rpc_method, RPCError, JsonRpcSession
-from core.constants import UserRole
-from core.security import generate_rsa_keypair, decrypt_rsa, create_access_token, verify_password
-from core.logger import logger
+from rsgi_wsrpc.core.session import rpc_method, RPCError, JsonRpcSession
+from rsgi_wsrpc.core.constants import UserRole
+from rsgi_wsrpc.core.security import generate_rsa_keypair, decrypt_rsa, create_access_token, verify_password
+from rsgi_wsrpc.core.logger import logger
 
-from plugins.db import async_session
-from plugins.auth.models import User, Role, RefreshToken, ActiveSession, OAuthAccount
-from plugins.auth.core import system_bypass_ctx, current_user_ctx
-from plugins.auth.config import get_session_lifetime_days, get_max_active_sessions
+from rsgi_wsrpc.plugins.db import async_session
+from .models import User, Role, RefreshToken, ActiveSession, OAuthAccount
+from .core import system_bypass_ctx, current_user_ctx
+from .config import get_session_lifetime_days, get_max_active_sessions
 
 # Уведомления об изменении сессий
 session_bus = asyncio.Condition()
@@ -212,7 +212,7 @@ async def handle_login(session: JsonRpcSession, args: Dict[str, Any]) -> Dict[st
             )
 
             # Настраиваем контекст сессии
-            from core.session import current_transport_ctx
+            from rsgi_wsrpc.core.session import current_transport_ctx
             transport = current_transport_ctx.get()
             current_user_ctx.set(user_context)
 
@@ -341,7 +341,7 @@ async def handle_refresh_token(session: JsonRpcSession, args: Dict[str, Any]) ->
                 user_agent=user_agent
             )
 
-            from core.session import current_transport_ctx
+            from rsgi_wsrpc.core.session import current_transport_ctx
             transport = current_transport_ctx.get()
             current_user_ctx.set(user_context)
 
@@ -762,7 +762,7 @@ async def handle_oauth_vk(session: JsonRpcSession, args: Dict[str, Any]) -> Dict
                 user_agent=user_agent
             )
 
-            from core.session import current_transport_ctx
+            from rsgi_wsrpc.core.session import current_transport_ctx
             transport = current_transport_ctx.get()
             current_user_ctx.set(user_context)
 
@@ -1005,7 +1005,7 @@ async def handle_oauth_yandex(session: JsonRpcSession, args: Dict[str, Any]) -> 
                 user_agent=user_agent
             )
 
-            from core.session import current_transport_ctx
+            from rsgi_wsrpc.core.session import current_transport_ctx
             transport = current_transport_ctx.get()
             current_user_ctx.set(user_context)
 

@@ -4,14 +4,14 @@
 Предоставляет модели User/Role, сессии, токены, Row-Level Security и RPC-методы авторизации.
 """
 
-from plugins.auth.core import (
+from .core import (
     current_user_ctx,
     system_bypass_ctx,
     BasicSecureModel,
     RowSecureModel,
     SecureModelBase,
 )
-from plugins.auth.models import (
+from .models import (
     User,
     Role,
     RolePermission,
@@ -21,15 +21,15 @@ from plugins.auth.models import (
     Team,
     SystemData,
 )
-from plugins.auth.permissions import (
+from .permissions import (
     check_permissions,
     prefill_ownership,
 )
-from plugins.auth.config import (
+from .config import (
     get_session_lifetime_days,
     get_max_active_sessions,
 )
-from plugins.auth.handlers import (
+from .handlers import (
     issue_refresh_token,
     notify_session_change,
     cleanup_app_session,

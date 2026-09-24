@@ -22,7 +22,7 @@ def get_auth_settings() -> Dict[str, Any]:
         pass
 
     try:
-        from core.lib.config import settings as core_settings
+        from rsgi_wsrpc.core.lib.config import settings as core_settings
         auth_conf = getattr(core_settings, "auth", None)
         if auth_conf and isinstance(auth_conf, dict):
             return auth_conf

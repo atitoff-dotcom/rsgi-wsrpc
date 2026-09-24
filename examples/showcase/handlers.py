@@ -21,7 +21,11 @@ from core.constants import UserRole
 from core.logger import logger
 
 from plugins.db import async_session
-from .models import Task
+
+try:
+    from .models import Task
+except ImportError:
+    from models import Task
 
 
 async def broadcast_tasks_updated():

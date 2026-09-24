@@ -61,5 +61,5 @@ Documentation = "https://github.com/atitoff-dotcom/rsgi-wsrpc/blob/main/docs/rea
 Repository = "https://github.com/atitoff-dotcom/rsgi-wsrpc.git"
 
 [tool.setuptools.packages.find]
-include = ["core*", "plugins*", "rsgi_wsrpc*"]
+include = ["rsgi_wsrpc*"]
 

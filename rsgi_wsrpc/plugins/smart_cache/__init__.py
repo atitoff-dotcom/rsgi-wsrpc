@@ -4,7 +4,7 @@
 Реализует RFC 0001: Event-Driven Feedback Caching.
 """
 
-from plugins.smart_cache.engine import (
+from .engine import (
     CacheTagVersion,
     VersionRegistry,
     version_registry,
@@ -12,7 +12,7 @@ from plugins.smart_cache.engine import (
     invalidate_tags,
     patch_tag,
 )
-import plugins.smart_cache.handlers  # Регистрация RPC-методов
+from . import handlers  # Регистрация RPC-методов
 
 __all__ = [
     "CacheTagVersion",

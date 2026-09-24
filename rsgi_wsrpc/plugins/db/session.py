@@ -26,7 +26,7 @@ if not _db_url:
 
 if not _db_url:
     try:
-        from core.lib.config import settings as core_settings
+        from rsgi_wsrpc.core.lib.config import settings as core_settings
         _db_url = getattr(core_settings, "database_url", None)
     except Exception:
         pass

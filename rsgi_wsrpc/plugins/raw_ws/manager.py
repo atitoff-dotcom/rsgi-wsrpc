@@ -6,7 +6,7 @@
 import asyncio
 import inspect
 from typing import Dict, Optional, Union
-from core.logger import logger
+from rsgi_wsrpc.core.logger import logger
 
 from .id_gen import generate_session_id
 from .session import RawWebSocketSession

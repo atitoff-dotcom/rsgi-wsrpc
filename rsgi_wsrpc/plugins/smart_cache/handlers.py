@@ -5,8 +5,8 @@ WSRPC хендлеры для плагина Smart Cache (рукопожатие
 """
 
 from typing import Any, Dict
-from core.session import rpc_method, JsonRpcSession, RPCError
-from plugins.smart_cache.engine import version_registry, invalidate_tags
+from rsgi_wsrpc.core.session import rpc_method, JsonRpcSession, RPCError
+from .engine import version_registry, invalidate_tags
 
 
 @rpc_method("cache.sync_check")

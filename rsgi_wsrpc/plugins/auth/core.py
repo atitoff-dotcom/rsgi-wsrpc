@@ -7,11 +7,11 @@
 from contextvars import ContextVar
 from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, declared_attr
 from sqlalchemy import Integer, DateTime, func
 
-from plugins.db import Base
-from core.session import current_user_ctx
+from rsgi_wsrpc.plugins.db import Base
+from rsgi_wsrpc.core.session import current_user_ctx
 
 # Контекстная переменная для обхода проверок прав системными операциями (Bypass)
 system_bypass_ctx: ContextVar[bool] = ContextVar("system_bypass", default=False)
@@ -22,6 +22,10 @@ class BasicSecureModel(Base):
     Базовый класс для моделей с проверкой прав на уровне модели (без row-level полей).
     """
     __abstract__ = True
+
+    @declared_attr
+    def __table_args__(cls):
+        return {"extend_existing": True}
 
 
 class RowSecureModel(BasicSecureModel):

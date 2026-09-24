@@ -8,8 +8,8 @@ import asyncio
 from typing import List, Dict, Any, Optional
 import orjson
 
-from core.session import ACTIVE_SESSIONS_SET, current_transport_ctx
-from core.logger import logger
+from rsgi_wsrpc.core.session import ACTIVE_SESSIONS_SET, current_transport_ctx
+from rsgi_wsrpc.core.logger import logger
 
 
 async def _safe_send(session, payload_str: str) -> bool:

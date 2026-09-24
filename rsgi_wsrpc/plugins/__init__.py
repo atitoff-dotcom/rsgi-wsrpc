@@ -3,11 +3,11 @@
 Официальные системные плагины фреймворка rsgi-wsrpc (Official Batteries).
 """
 
-from plugins import db
-from plugins import auth
-from plugins import broadcast
-from plugins import smart_cache
-from plugins import raw_ws
+from . import db
+from . import auth
+from . import broadcast
+from . import smart_cache
+from . import raw_ws
 
 __all__ = [
     "db",

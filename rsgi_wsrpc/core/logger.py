@@ -15,7 +15,7 @@ def get_current_session_safe():
     Безопасно извлекает текущую транспортную сессию из контекста.
     """
     try:
-        from core.session import current_transport_ctx
+        from .session import current_transport_ctx
         return current_transport_ctx.get()
     except (ImportError, LookupError):
         return None

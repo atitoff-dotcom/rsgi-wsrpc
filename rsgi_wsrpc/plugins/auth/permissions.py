@@ -3,8 +3,8 @@
 Проверка прав доступа (RBAC / Permissions) плагина авторизации.
 """
 
-from core.session import RPCError
-from plugins.auth.core import current_user_ctx, system_bypass_ctx
+from rsgi_wsrpc.core.session import RPCError
+from .core import current_user_ctx, system_bypass_ctx
 
 
 def check_permissions(action: str, model_name: str, obj: object = None) -> None:

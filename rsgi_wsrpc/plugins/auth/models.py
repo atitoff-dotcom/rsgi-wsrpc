@@ -12,8 +12,8 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, Boolean, Text, ForeignKey, Table, Column, DateTime, func, JSON, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
-from plugins.db import Base
-from plugins.auth.core import RowSecureModel, BasicSecureModel, system_bypass_ctx
+from rsgi_wsrpc.plugins.db import Base
+from .core import RowSecureModel, BasicSecureModel, system_bypass_ctx
 
 # Many-to-Many association tables
 user_role_association = Table(
@@ -21,6 +21,7 @@ user_role_association = Table(
     Base.metadata,
     Column("user_id", Integer, ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True),
     Column("role_id", Integer, ForeignKey("auth_role.id", ondelete="CASCADE"), primary_key=True),
+    extend_existing=True,
 )
 
 user_team_association = Table(
@@ -28,6 +29,7 @@ user_team_association = Table(
     Base.metadata,
     Column("user_id", Integer, ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True),
     Column("team_id", Integer, ForeignKey("auth_team.id", ondelete="CASCADE"), primary_key=True),
+    extend_existing=True,
 )
 
 
@@ -79,6 +81,7 @@ class RefreshToken(Base):
     Модель для хранения токенов обновления (RefreshToken).
     """
     __tablename__ = "refresh_tokens"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     
@@ -99,6 +102,7 @@ class ActiveSession(Base):
     Модель для отслеживания активных WebSocket-сессий.
     """
     __tablename__ = "active_sessions"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     
@@ -268,7 +272,7 @@ class User(RowSecureModel):
             except Exception:
                 return False
         else:
-            from core.logger import logger
+            from rsgi_wsrpc.core.logger import logger
             logger.warning(f"Используется устаревший алгоритм хэширования SHA-256 для пользователя {self.login}")
             try:
                 hashed_simple = hashlib.sha256(password.encode("utf-8")).hexdigest()
@@ -284,7 +288,7 @@ class User(RowSecureModel):
         if salt is None:
             salt = os.urandom(16)
         if iterations is None:
-            from core.lib.config import settings
+            from rsgi_wsrpc.core.lib.config import settings
             try:
                 iterations = settings.security.password_iterations
             except AttributeError:
@@ -298,6 +302,7 @@ class SystemData(Base):
     Таблица для хранения произвольных системных данных в формате JSON.
     """
     __tablename__ = "system_data"
+    __table_args__ = {"extend_existing": True}
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -317,6 +322,7 @@ class OAuthAccount(Base):
     Модель для привязки внешних аккаунтов авторизации (VK ID, Yandex ID и др.).
     """
     __tablename__ = "oauth_accounts"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("auth_user.id", ondelete="CASCADE"), index=True)

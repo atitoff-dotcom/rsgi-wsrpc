@@ -5,9 +5,9 @@ from itertools import count
 from typing import Optional, Any
 
 import orjson
-from core.logger import logger
-from core.lib.config import settings
-from core.tabular import pack_tabular, unpack_tabular, is_tabular, tabular_response
+from .logger import logger
+from .lib.config import settings
+from .tabular import pack_tabular, unpack_tabular, is_tabular, tabular_response
 
 # Контекстные переменные для доступа к сессиям из любой точки кода
 current_transport_ctx: ContextVar = ContextVar("current_transport", default=None)
@@ -42,7 +42,7 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
             Обертка для проверки прав доступа и вызова исходного хендлера.
             """
             if role is not None:
-                from core.constants import UserRole
+                from .constants import UserRole
                 user_role = getattr(session, "user_role", UserRole.GUEST)
                 if user_role != UserRole.ADMIN and user_role != role:
                     raise RPCError(f"Доступ запрещен: требуется роль {role.value if hasattr(role, 'value') else role}")
@@ -254,7 +254,7 @@ class JsonRpcSession:
 
     async def _idle_timeout_loop(self):
         try:
-            from core.lib.config import settings
+            from .lib.config import settings
             timeout = settings.security.get("session_idle_timeout", 900)
             if timeout <= 0:
                 return

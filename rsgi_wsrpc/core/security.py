@@ -9,7 +9,7 @@ import jwt
 ALGORITHM = "HS256"
 logger = logging.getLogger("core.security")
 
-from core.lib.config import settings
+from .lib.config import settings
 
 def get_secret_key() -> str:
     key = None
@@ -86,7 +86,7 @@ def verify_password(password: str, hashed: str) -> bool:
     Строго требует хэшированный пароль.
     (Устарело: используйте User.verify_password)
     """
-    from core.logger import logger
+    from .logger import logger
     logger.warning("Использование устаревшей функции core.security.verify_password. Перейдите на User.verify_password.")
     if not hashed or not hashed.startswith("pbkdf2_sha256$"):
         return False

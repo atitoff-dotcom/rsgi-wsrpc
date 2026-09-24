@@ -157,3 +157,14 @@ def configure(
         logger.debug(f"[CONFIG] Ядро обновлено параметрами: {list(updates.keys())}")
 
     return settings
+
+
+def get_config() -> Settings:
+    """Возвращает текущий синглтон настроек ядра Settings."""
+    return settings
+
+
+def get_settings() -> Settings:
+    """Алиас для get_config()."""
+    return settings
+

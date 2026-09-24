@@ -14,10 +14,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from sqlalchemy import Column, DateTime, Integer, String, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from plugins.db import Base, async_session, engine
-from plugins.broadcast import broadcast_notification
-from core.lifecycle import on_startup
-from core.logger import logger
+from rsgi_wsrpc.plugins.db import Base, async_session, engine
+from rsgi_wsrpc.plugins.broadcast import broadcast_notification
+from rsgi_wsrpc.core.lifecycle import on_startup
+from rsgi_wsrpc.core.logger import logger
 
 
 class CacheTagVersion(Base):

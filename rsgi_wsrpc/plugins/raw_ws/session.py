@@ -8,7 +8,7 @@ import time
 import inspect
 import asyncio
 from typing import Callable, List, Union, Optional
-from core.logger import logger
+from rsgi_wsrpc.core.logger import logger
 
 
 class RawWebSocketSession:
