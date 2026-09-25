@@ -179,7 +179,7 @@ from plugins.auth.handlers import *
 | **`plugins.raw_ws`** | ✅ Стабилен | Ядро платформы | Сырые и бинарные двунаправленные WebSocket-сессии с 64-битными ID |
 | **`plugins.smart_cache`**| ⚡ В разработке | [RFC 0001](rfc/0001-smart-cache.md) | Реактивный кэш с обратной связью и 0 мс задержкой интерфейса |
 | **`plugins.admin`** | 📝 На рассмотрении | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Реактивная панель администрирования и корпоративный CRUD-движок |
-| **`plugins.files`** | 📝 На рассмотрении | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Двухфазный коммит загрузок (2PC) и kernel-level отдача статики |
+| **`plugins.files`** | ✅ Стабилен | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Двухфазный коммит загрузок (2PC) и kernel-level отдача статики |
 | **`plugins.broadcast`** | 📝 На рассмотрении | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | Высокопроизводительная Zero-Copy рассылка событий и таргетинг |
 | **`plugins.gateway`** | 📝 На рассмотрении | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API Gateway для WSRPC и авто-генерация документации Swagger |
 | **`plugins.discussions`**| 📝 На рассмотрении | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Иерархический форум, вложенные треды и эмодзи-реакции |

@@ -176,7 +176,7 @@ The following table tracks official framework plugins and their standardized arc
 | **`plugins.raw_ws`** | ✅ Stable | Core Framework | Raw & binary bidirectional WebSocket sessions with 64-bit IDs |
 | **`plugins.smart_cache`**| ⚡ In Progress | [RFC 0001](rfc/0001-smart-cache.md) | Event-driven feedback cache with 0 ms perceived latency |
 | **`plugins.admin`** | 📝 In Review | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Reactive enterprise administration & CRUD engine |
-| **`plugins.files`** | 📝 In Review | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Two-phase commit (2PC) streaming uploads & Nginx offload |
+| **`plugins.files`** | ✅ Stable | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Two-phase commit (2PC) streaming uploads & Nginx offload |
 | **`plugins.broadcast`** | 📝 In Review | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | High-throughput zero-copy WebSocket push & targeting |
 | **`plugins.gateway`** | 📝 In Review | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API gateway for WSRPC & auto-generated Swagger UI |
 | **`plugins.discussions`**| 📝 In Review | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Hierarchical forum, nested threads & emoji reactions |

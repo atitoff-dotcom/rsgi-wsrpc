@@ -2,7 +2,7 @@
 
 * **RFC Number:** 0005
 * **Title:** File Storage & Two-Phase Commit Upload Subsystem (`plugins.files`)
-* **Status:** 📝 Proposed / In Review
+* **Status:** ✅ Accepted / Implemented (rsgi-wsrpc v0.2.0)
 * **Author:** Architecture Team
 * **Date:** September 2026
 

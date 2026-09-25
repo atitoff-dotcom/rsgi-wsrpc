@@ -44,4 +44,4 @@ ENV/
 # Local overrides
 my_settings.yaml
 local_settings.yaml
-rsgi_wsrpc
+

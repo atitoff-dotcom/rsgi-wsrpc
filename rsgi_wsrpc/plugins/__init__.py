@@ -8,6 +8,7 @@ from . import auth
 from . import broadcast
 from . import smart_cache
 from . import raw_ws
+from . import files
 
 __all__ = [
     "db",
@@ -15,4 +16,6 @@ __all__ = [
     "broadcast",
     "smart_cache",
     "raw_ws",
+    "files",
 ]
+
