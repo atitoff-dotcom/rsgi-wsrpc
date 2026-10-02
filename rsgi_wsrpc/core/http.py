@@ -22,11 +22,21 @@ def extract_header(scope: Any, header_name: str, default: Optional[str] = None) 
 
     # 1. Если это dict или Granian Headers с методом .get()
     if hasattr(headers, "get"):
-        val = headers.get(target)
-        if val is None:
-            val = headers.get(target.encode("latin1"))
-        if val is not None:
-            return val.decode("latin1") if isinstance(val, bytes) else str(val)
+        try:
+            val = headers.get(target)
+            if val is not None:
+                return val.decode("latin1") if isinstance(val, bytes) else str(val)
+        except (TypeError, KeyError, AttributeError):
+            pass
+
+        # Fallback по байтовому ключу только для стандартных python dict
+        if isinstance(headers, dict):
+            try:
+                val = headers.get(target.encode("latin1"))
+                if val is not None:
+                    return val.decode("latin1") if isinstance(val, bytes) else str(val)
+            except (TypeError, KeyError, AttributeError):
+                pass
 
     # 2. Если это список/кортеж пар (k, v) или объект с .items()
     items = headers.items() if hasattr(headers, "items") else headers

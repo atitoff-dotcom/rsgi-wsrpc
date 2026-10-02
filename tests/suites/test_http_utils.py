@@ -33,14 +33,25 @@ def test_extract_header_granian_mock():
             self._map = {k.lower(): v for k, v in mapping.items()}
 
         def get(self, key):
-            if isinstance(key, bytes):
-                key = key.decode("latin1")
+            if not isinstance(key, str):
+                raise TypeError("'bytes' object is not an instance of 'str' while processing 'key'")
             return self._map.get(key.lower())
 
     scope = DummyScope(headers=MockHeaders({"Host": "example.com", "Authorization": "Bearer token123"}))
     assert extract_header(scope, "host") == "example.com"
     assert extract_header(scope, "authorization") == "Bearer token123"
+    # Заголовок отсутствует: не должен вызывать TypeError из-за fallback на bytes
     assert extract_header(scope, "cookie") is None
+    assert extract_header(scope, "cookie", "default_val") == "default_val"
+
+
+def test_extract_header_dict_with_byte_keys():
+    scope = {"headers": {b"user-agent": b"Curl/7.68.0", b"x-auth": "secret123"}}
+    assert extract_header(scope, "User-Agent") == "Curl/7.68.0"
+    assert extract_header(scope, "X-Auth") == "secret123"
+    assert extract_header(scope, "missing") is None
+    assert extract_header(scope, "missing", "fallback") == "fallback"
+
 
 
 def test_extract_query_params():
