@@ -180,9 +180,11 @@ from plugins.auth.handlers import *
 | **`plugins.smart_cache`**| ⚡ В разработке | [RFC 0001](rfc/0001-smart-cache.md) | Реактивный кэш с обратной связью и 0 мс задержкой интерфейса |
 | **`plugins.admin`** | 📝 На рассмотрении | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Реактивная панель администрирования и корпоративный CRUD-движок |
 | **`plugins.files`** | ✅ Стабилен | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Двухфазный коммит загрузок (2PC) и kernel-level отдача статики |
+| **`plugins.seo`**   | ✅ Стабилен | [RFC 0011](rfc/0011-dynamic-rendering-seo.md) | Dynamic Rendering, sitemap.xml, OpenGraph, JSON-LD, IndexNow |
 | **`plugins.broadcast`** | 📝 На рассмотрении | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | Высокопроизводительная Zero-Copy рассылка событий и таргетинг |
 | **`plugins.gateway`** | 📝 На рассмотрении | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API Gateway для WSRPC и авто-генерация документации Swagger |
 | **`plugins.discussions`**| 📝 На рассмотрении | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Иерархический форум, вложенные треды и эмодзи-реакции |
 | **`plugins.messages`** | 📝 На рассмотрении | [RFC 0009](rfc/0009-direct-messaging-and-chat.md) | Личные сообщения 1-на-1, чат и полиморфные вложения |
 | **`plugins.articles`** | 📝 На рассмотрении | [RFC 0010](rfc/0010-knowledge-base-and-articles-cms.md) | База знаний Markdown, FAQ и система управления статьями |
+
 

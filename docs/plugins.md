@@ -177,9 +177,11 @@ The following table tracks official framework plugins and their standardized arc
 | **`plugins.smart_cache`**| ⚡ In Progress | [RFC 0001](rfc/0001-smart-cache.md) | Event-driven feedback cache with 0 ms perceived latency |
 | **`plugins.admin`** | 📝 In Review | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Reactive enterprise administration & CRUD engine |
 | **`plugins.files`** | ✅ Stable | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Two-phase commit (2PC) streaming uploads & Nginx offload |
+| **`plugins.seo`**   | ✅ Stable | [RFC 0011](rfc/0011-dynamic-rendering-seo.md) | Dynamic Rendering, sitemap.xml, OpenGraph, JSON-LD, IndexNow |
 | **`plugins.broadcast`** | 📝 In Review | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | High-throughput zero-copy WebSocket push & targeting |
 | **`plugins.gateway`** | 📝 In Review | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API gateway for WSRPC & auto-generated Swagger UI |
 | **`plugins.discussions`**| 📝 In Review | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Hierarchical forum, nested threads & emoji reactions |
 | **`plugins.messages`** | 📝 In Review | [RFC 0009](rfc/0009-direct-messaging-and-chat.md) | 1-on-1 direct messaging, chat & polymorphic context |
 | **`plugins.articles`** | 📝 In Review | [RFC 0010](rfc/0010-knowledge-base-and-articles-cms.md) | Markdown knowledge base, FAQ & article CMS |
+
 

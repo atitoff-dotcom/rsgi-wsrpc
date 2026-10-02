@@ -60,45 +60,7 @@ def sanitize_filename(filename: Optional[str]) -> str:
     return safe[:255]
 
 
-def extract_header(scope, header_name: str, default: Optional[str] = None) -> Optional[str]:
-    """
-    Извлекает заголовок из RSGI scope в независимом от регистра формате.
-    Поддерживает Granian Headers, dict, список кортежей.
-    """
-    target = header_name.lower()
-    headers = getattr(scope, "headers", None)
-    if headers is None and isinstance(scope, dict):
-        headers = scope.get("headers")
-
-    if headers is None:
-        return default
-
-    if hasattr(headers, "get"):
-        val = headers.get(target) or headers.get(target.encode("latin1"))
-        if val is not None:
-            return val.decode("latin1") if isinstance(val, bytes) else str(val)
-
-    items = headers.items() if hasattr(headers, "items") else headers
-    try:
-        for k, v in items:
-            k_str = k.decode("latin1").lower() if isinstance(k, bytes) else str(k).lower()
-            if k_str == target:
-                return v.decode("latin1") if isinstance(v, bytes) else str(v)
-    except Exception:
-        pass
-
-    return default
-
-
-def extract_query_params(scope) -> Dict[str, str]:
-    """Извлекает query-параметры из RSGI scope."""
-    qs = getattr(scope, "query_string", "")
-    if isinstance(qs, bytes):
-        qs = qs.decode("utf-8", errors="replace")
-    elif not isinstance(qs, str):
-        qs = str(qs or "")
-    parsed = parse_qs(qs)
-    return {k: v[0] if v else "" for k, v in parsed.items()}
+from rsgi_wsrpc.core.http import extract_header, extract_query_params
 
 
 async def stream_request_to_disk(

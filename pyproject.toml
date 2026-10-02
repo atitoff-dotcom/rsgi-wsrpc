@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rsgi-wsrpc"
-version = "0.2.0"
+version = "0.3.0"
 description = "High-performance reactive fullstack Python framework on Rust RSGI (Granian) with symmetric WSRPC (JSON-RPC 2.0) and Tabular Data Compression."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -62,4 +62,10 @@ Repository = "https://github.com/atitoff-dotcom/rsgi-wsrpc.git"
 
 [tool.setuptools.packages.find]
 include = ["rsgi_wsrpc*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+
 

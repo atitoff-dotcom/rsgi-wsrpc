@@ -16,6 +16,7 @@ from rsgi_wsrpc.core.session import (
 from rsgi_wsrpc.core.tabular import pack_tabular, unpack_tabular, tabular_response, is_tabular
 from rsgi_wsrpc.core.constants import UserRole
 from rsgi_wsrpc.core.router import http_route, HTTP_ROUTES
+from rsgi_wsrpc.core.http import extract_header, extract_query_params
 from rsgi_wsrpc.core.lifecycle import (
     on_startup, on_shutdown, run_startup_callbacks, run_shutdown_callbacks
 )
@@ -25,7 +26,7 @@ from rsgi_wsrpc.core.lib.config import configure, get_config
 from rsgi_wsrpc import core
 from rsgi_wsrpc import plugins
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "rpc_method",
@@ -43,6 +44,8 @@ __all__ = [
     "UserRole",
     "http_route",
     "HTTP_ROUTES",
+    "extract_header",
+    "extract_query_params",
     "on_startup",
     "on_shutdown",
     "run_startup_callbacks",

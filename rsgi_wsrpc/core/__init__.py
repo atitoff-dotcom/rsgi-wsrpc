@@ -9,11 +9,14 @@ from .session import (
 from .tabular import pack_tabular, unpack_tabular, tabular_response, is_tabular
 from .logger import logger
 from .router import http_route
+from .http import extract_header, extract_query_params
 from .lifecycle import on_startup, run_startup_callbacks
 
 __all__ = [
     "rpc_method", "RPCError", "JsonRpcSession",
     "current_user_ctx", "current_session_ctx", "current_transport_ctx",
     "pack_tabular", "unpack_tabular", "tabular_response", "is_tabular",
-    "logger", "http_route", "on_startup", "run_startup_callbacks"
+    "logger", "http_route", "extract_header", "extract_query_params",
+    "on_startup", "run_startup_callbacks"
 ]
+

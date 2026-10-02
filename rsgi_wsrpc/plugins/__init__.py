@@ -9,6 +9,7 @@ from . import broadcast
 from . import smart_cache
 from . import raw_ws
 from . import files
+from . import seo
 
 __all__ = [
     "db",
@@ -17,5 +18,6 @@ __all__ = [
     "smart_cache",
     "raw_ws",
     "files",
+    "seo",
 ]
 
