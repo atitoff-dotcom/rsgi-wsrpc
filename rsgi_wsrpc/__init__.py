@@ -26,7 +26,7 @@ from rsgi_wsrpc.core.lib.config import configure, get_config
 from rsgi_wsrpc import core
 from rsgi_wsrpc import plugins
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "rpc_method",

@@ -10,19 +10,26 @@ from uuid import uuid4
 import pytest
 
 from rsgi_wsrpc.plugins.seo import (
+    HtmlBuilder,
     SeoPageData,
     bot_page,
     build_sitemap_xml,
     configure_seo,
+    enqueue_indexnow_urls,
+    flush_indexnow_queue,
     get_seo_config,
     handle_bot_http,
+    handle_sitemap_http,
     invalidate_sitemap_cache,
     is_bot,
+    notify_indexnow,
     register_indexnow_key_route,
     register_sitemap_provider,
     render_seo_page,
 )
 from rsgi_wsrpc.plugins.seo.router import BOT_ROUTES, BotRoute
+from rsgi_wsrpc.plugins.seo.sitemap import SITEMAP_PROVIDERS
+
 
 
 class MockRSGIProto:
@@ -257,3 +264,177 @@ def test_sitemap_xml_generation():
         assert '<lastmod>2026-10-01</lastmod>' in xml
 
     asyncio.run(_run())
+
+
+# -----------------------------------------------------------------------------
+# 5. Тесты гибридного детектора (CLI, Scrapers, Custom, Extra Patterns)
+# -----------------------------------------------------------------------------
+
+def test_hybrid_bot_detector_advanced():
+    # CLI и утилиты автоматизации
+    assert is_bot("curl/7.81.0") is True
+    assert is_bot("Wget/1.21.2") is True
+    assert is_bot("python-requests/2.31.0") is True
+    assert is_bot("Go-http-client/1.1") is True
+    assert is_bot("aiohttp/3.8.5") is True
+
+    # Экзотический краулер без браузерного движка
+    assert is_bot("CustomAiScraper/1.0 (+http://ai.example.com)") is True
+
+    # Дополнительные пользовательские паттерны
+    configure_seo(extra_bot_patterns=[r"my-internal-crawler"])
+    assert is_bot("Mozilla/5.0 my-internal-crawler Chrome/120.0") is True
+
+    # Пользовательский детектор
+    def custom_det(scope_or_ua):
+        if "super-vip-browser" in str(scope_or_ua):
+            return False  # Принудительно считать браузером
+        if "banned-client" in str(scope_or_ua):
+            return True   # Принудительно считать ботом
+        return None       # Передать в стандартный детектор
+
+    configure_seo(custom_detector=custom_det)
+    assert is_bot("super-vip-browser") is False
+    assert is_bot("banned-client") is True
+
+    # Сбрасываем кастомизацию
+    configure_seo(extra_bot_patterns=[], custom_detector=None)
+
+
+# -----------------------------------------------------------------------------
+# 6. Тесты HtmlBuilder
+# -----------------------------------------------------------------------------
+
+def test_html_builder_escaping_and_structure():
+    builder = HtmlBuilder()
+    builder.h1("Заголовок <script>alert(1)</script>")
+    builder.p("Текст & цитата \"тест\"")
+    builder.link("Ссылка", "https://example.com?a=1&b=2")
+    builder.img("/pic.png", "Описание <картинки>")
+    builder.list(["Пункт 1", "Пункт 2 <br>"], ordered=True)
+    builder.article(HtmlBuilder().p("Вложенный параграф"))
+    builder.raw("<!-- доверенный комментарий -->")
+
+    out = builder.to_html()
+
+    # Проверка безопасного экранирования
+    assert "<h1>Заголовок &lt;script&gt;alert(1)&lt;/script&gt;</h1>" in out
+    assert "<p>Текст &amp; цитата &quot;тест&quot;</p>" in out
+    assert '<a href="https://example.com?a=1&amp;b=2">Ссылка</a>' in out
+    assert '<img src="/pic.png" alt="Описание &lt;картинки&gt;">' in out
+    assert "<ol><li>Пункт 1</li><li>Пункт 2 &lt;br&gt;</li></ol>" in out
+    assert "<article>\n<p>Вложенный параграф</p>\n</article>" in out
+    assert "<!-- доверенный комментарий -->" in out
+    assert str(builder) == out
+
+
+# -----------------------------------------------------------------------------
+# 7. Тесты пагинации карты сайта (Sitemap Index & Chunks)
+# -----------------------------------------------------------------------------
+
+def test_sitemap_pagination_and_index():
+    async def _run():
+        SITEMAP_PROVIDERS.clear()
+        invalidate_sitemap_cache()
+        
+        # Настраиваем размер чанка в 3 URL
+        configure_seo(
+            site_url="https://example.com",
+            sitemap_max_urls_per_file=3,
+        )
+
+        @register_sitemap_provider
+        def many_urls():
+            return [
+                {"loc": f"/item-{i}", "lastmod": f"2026-10-0{i}" if i < 10 else "2026-10-10"}
+                for i in range(1, 8)  # 7 URL -> 3 чанка: (3, 3, 1)
+            ]
+
+        # 1. /sitemap.xml должен вернуть <sitemapindex>
+        index_xml = await build_sitemap_xml("https://example.com", page=None)
+        assert "<sitemapindex" in index_xml
+        assert "<loc>https://example.com/sitemap-1.xml</loc>" in index_xml
+        assert "<loc>https://example.com/sitemap-2.xml</loc>" in index_xml
+        assert "<loc>https://example.com/sitemap-3.xml</loc>" in index_xml
+
+        # 2. /sitemap-1.xml должен вернуть <urlset> с первыми 3 элементами
+        page1_xml = await build_sitemap_xml("https://example.com", page=1)
+        assert "<urlset" in page1_xml
+        assert "<loc>https://example.com/item-1</loc>" in page1_xml
+        assert "<loc>https://example.com/item-3</loc>" in page1_xml
+        assert "item-4" not in page1_xml
+
+        # 3. /sitemap-3.xml должен содержать 7-й элемент
+        page3_xml = await build_sitemap_xml("https://example.com", page=3)
+        assert "<urlset" in page3_xml
+        assert "<loc>https://example.com/item-7</loc>" in page3_xml
+
+        # 4. Проверка через универсальный перехватчик handle_sitemap_http
+        proto_idx = MockRSGIProto()
+        handled_idx = await handle_sitemap_http({"method": "GET", "path": "/sitemap.xml", "headers": []}, proto_idx)
+        assert handled_idx is True
+        assert proto_idx.status == 200
+        assert "<sitemapindex" in proto_idx.body
+
+        proto_p2 = MockRSGIProto()
+        handled_p2 = await handle_sitemap_http({"method": "GET", "path": "/sitemap-2.xml", "headers": []}, proto_p2)
+        assert handled_p2 is True
+        assert proto_p2.status == 200
+        assert "<urlset" in proto_p2.body
+        assert "item-4" in proto_p2.body
+
+        # Возвращаем стандартный лимит
+        configure_seo(sitemap_max_urls_per_file=50_000)
+
+    asyncio.run(_run())
+
+
+# -----------------------------------------------------------------------------
+# 8. Тесты файловой очереди IndexNow и сброса пачки
+# -----------------------------------------------------------------------------
+
+def test_indexnow_file_queue_and_flushing(tmp_path, monkeypatch):
+    async def _run():
+        queue_file = str(tmp_path / "test_indexnow_queue.txt")
+        sent_batches = []
+
+        async def mock_send(urls, host, key, key_location=None):
+            sent_batches.append(list(urls))
+
+        monkeypatch.setattr("rsgi_wsrpc.plugins.seo.indexnow._send_indexnow_background", mock_send)
+
+        configure_seo(
+            site_url="https://example.com",
+            indexnow_key="test-key-xyz",
+            indexnow_queue_file=queue_file,
+            indexnow_flush_interval=1800,
+            indexnow_max_queue_size=1000,
+        )
+
+        # 1. Добавляем URLs (с повторами для проверки дедупликации)
+        notify_indexnow(["https://example.com/article-1", "https://example.com/article-2"])
+        notify_indexnow(["https://example.com/article-2", "https://example.com/article-3"])
+
+        # Файл очереди должен существовать и содержать записи
+        with open(queue_file, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        assert len(lines) == 4
+
+        # 2. Сбрасываем очередь
+        sent_count = await flush_indexnow_queue(queue_file=queue_file)
+        assert sent_count == 3  # Уникальных ровно 3
+
+        # Проверяем, что в мок ушел один батч с 3 уникальными URL
+        assert len(sent_batches) == 1
+        assert set(sent_batches[0]) == {
+            "https://example.com/article-1",
+            "https://example.com/article-2",
+            "https://example.com/article-3",
+        }
+
+        # После сброса временные файлы удалены
+        import glob
+        assert len(glob.glob(f"{queue_file}*")) == 0
+
+    asyncio.run(_run())
+

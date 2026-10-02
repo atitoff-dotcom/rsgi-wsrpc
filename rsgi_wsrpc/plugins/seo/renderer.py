@@ -182,7 +182,78 @@ def render_404_html(site_name: Optional[str] = None) -> str:
     )
 
 
+class HtmlBuilder:
+    """
+    Легковесный zero-dependency билдер валидного семантического HTML для краулеров.
+    Автоматически экранирует пользовательский ввод для предотвращения XSS.
+    """
+
+    def __init__(self) -> None:
+        self._elements: List[str] = []
+
+    def h1(self, text: str) -> "HtmlBuilder":
+        self._elements.append(f"<h1>{html.escape(text)}</h1>")
+        return self
+
+    def h2(self, text: str) -> "HtmlBuilder":
+        self._elements.append(f"<h2>{html.escape(text)}</h2>")
+        return self
+
+    def h3(self, text: str) -> "HtmlBuilder":
+        self._elements.append(f"<h3>{html.escape(text)}</h3>")
+        return self
+
+    def h4(self, text: str) -> "HtmlBuilder":
+        self._elements.append(f"<h4>{html.escape(text)}</h4>")
+        return self
+
+    def p(self, text: str) -> "HtmlBuilder":
+        self._elements.append(f"<p>{html.escape(text)}</p>")
+        return self
+
+    def text(self, text: str) -> "HtmlBuilder":
+        self._elements.append(html.escape(text))
+        return self
+
+    def raw(self, raw_html: str) -> "HtmlBuilder":
+        """Вставляет сырой HTML без экранирования (для доверенного содержимого)."""
+        self._elements.append(raw_html)
+        return self
+
+    def link(self, text: str, href: str) -> "HtmlBuilder":
+        self._elements.append(f'<a href="{html.escape(href, quote=True)}">{html.escape(text)}</a>')
+        return self
+
+    def img(self, src: str, alt: str = "") -> "HtmlBuilder":
+        self._elements.append(f'<img src="{html.escape(src, quote=True)}" alt="{html.escape(alt, quote=True)}">')
+        return self
+
+    def list(self, items: List[str], ordered: bool = False) -> "HtmlBuilder":
+        tag = "ol" if ordered else "ul"
+        lis = "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        self._elements.append(f"<{tag}>{lis}</{tag}>")
+        return self
+
+    def article(self, content: Any) -> "HtmlBuilder":
+        inner = content.to_html() if isinstance(content, HtmlBuilder) else str(content)
+        self._elements.append(f"<article>\n{inner}\n</article>")
+        return self
+
+    def section(self, content: Any) -> "HtmlBuilder":
+        inner = content.to_html() if isinstance(content, HtmlBuilder) else str(content)
+        self._elements.append(f"<section>\n{inner}\n</section>")
+        return self
+
+    def to_html(self) -> str:
+        return "\n".join(self._elements)
+
+    def __str__(self) -> str:
+        return self.to_html()
+
+
 __all__ = [
     "render_seo_page",
     "render_404_html",
+    "HtmlBuilder",
 ]
+

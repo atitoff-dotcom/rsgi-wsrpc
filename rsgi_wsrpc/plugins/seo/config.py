@@ -4,8 +4,8 @@ rsgi_wsrpc.plugins.seo.config: Настройки подсистемы поис�
 """
 
 import os
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, List, Optional, Union
 
 from rsgi_wsrpc.core.lib.config import get_config
 
@@ -19,6 +19,12 @@ class SeoConfig:
     default_lang: str = "ru"
     sitemap_ttl: int = 3600  # 1 час кэша по умолчанию
     default_og_image: Optional[str] = None
+    extra_bot_patterns: List[str] = field(default_factory=list)
+    custom_detector: Optional[Callable[[Union[str, Any]], Optional[bool]]] = None
+    indexnow_queue_file: Optional[str] = "data/indexnow_queue.txt"
+    indexnow_flush_interval: int = 1800  # 30 минут
+    indexnow_max_queue_size: int = 1000
+    sitemap_max_urls_per_file: int = 50_000
 
 
 _CURRENT_SEO_CONFIG: Optional[SeoConfig] = None
@@ -73,6 +79,37 @@ def get_seo_config() -> SeoConfig:
         or None
     )
 
+    extra_bot_patterns = seo_raw.get("extra_bot_patterns") or []
+    if isinstance(extra_bot_patterns, str):
+        extra_bot_patterns = [p.strip() for p in extra_bot_patterns.split(",") if p.strip()]
+
+    queue_file_env = os.getenv("INDEXNOW_QUEUE_FILE")
+    indexnow_queue_file = (
+        seo_raw.get("indexnow_queue_file")
+        if "indexnow_queue_file" in seo_raw
+        else (queue_file_env if queue_file_env is not None else "data/indexnow_queue.txt")
+    )
+    if indexnow_queue_file in ("", "none", "false", "None"):
+        indexnow_queue_file = None
+
+    indexnow_flush_interval = int(
+        seo_raw.get("indexnow_flush_interval")
+        or os.getenv("INDEXNOW_FLUSH_INTERVAL")
+        or 1800
+    )
+
+    indexnow_max_queue_size = int(
+        seo_raw.get("indexnow_max_queue_size")
+        or os.getenv("INDEXNOW_MAX_QUEUE_SIZE")
+        or 1000
+    )
+
+    sitemap_max_urls_per_file = int(
+        seo_raw.get("sitemap_max_urls_per_file")
+        or os.getenv("SITEMAP_MAX_URLS_PER_FILE")
+        or 50_000
+    )
+
     _CURRENT_SEO_CONFIG = SeoConfig(
         site_url=site_url,
         site_name=site_name,
@@ -80,6 +117,12 @@ def get_seo_config() -> SeoConfig:
         default_lang=default_lang,
         sitemap_ttl=sitemap_ttl,
         default_og_image=default_og_image,
+        extra_bot_patterns=list(extra_bot_patterns),
+        custom_detector=seo_raw.get("custom_detector"),
+        indexnow_queue_file=indexnow_queue_file,
+        indexnow_flush_interval=indexnow_flush_interval,
+        indexnow_max_queue_size=indexnow_max_queue_size,
+        sitemap_max_urls_per_file=sitemap_max_urls_per_file,
     )
     return _CURRENT_SEO_CONFIG
 
@@ -91,6 +134,12 @@ def configure_seo(
     default_lang: Optional[str] = None,
     sitemap_ttl: Optional[int] = None,
     default_og_image: Optional[str] = None,
+    extra_bot_patterns: Optional[List[str]] = None,
+    custom_detector: Optional[Callable[[Union[str, Any]], Optional[bool]]] = None,
+    indexnow_queue_file: Optional[str] = ...,  # type: ignore[assignment]
+    indexnow_flush_interval: Optional[int] = None,
+    indexnow_max_queue_size: Optional[int] = None,
+    sitemap_max_urls_per_file: Optional[int] = None,
 ) -> SeoConfig:
     """Программная настройка плагина SEO."""
     current = get_seo_config()
@@ -106,6 +155,18 @@ def configure_seo(
         current.sitemap_ttl = sitemap_ttl
     if default_og_image is not None:
         current.default_og_image = default_og_image
+    if extra_bot_patterns is not None:
+        current.extra_bot_patterns = list(extra_bot_patterns)
+    if custom_detector is not None:
+        current.custom_detector = custom_detector
+    if indexnow_queue_file is not ...:
+        current.indexnow_queue_file = indexnow_queue_file
+    if indexnow_flush_interval is not None:
+        current.indexnow_flush_interval = indexnow_flush_interval
+    if indexnow_max_queue_size is not None:
+        current.indexnow_max_queue_size = indexnow_max_queue_size
+    if sitemap_max_urls_per_file is not None:
+        current.sitemap_max_urls_per_file = sitemap_max_urls_per_file
 
     return current
 

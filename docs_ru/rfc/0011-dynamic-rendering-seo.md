@@ -2,7 +2,7 @@
 
 * **Номер RFC:** 0011
 * **Название:** Подсистема Dynamic Rendering, Sitemap, OpenGraph и IndexNow (`plugins.seo`)
-* **Статус:** ✅ Принят и реализован (rsgi-wsrpc v0.3.0)
+* **Статус:** ✅ Принят и расширен (rsgi-wsrpc v0.3.2)
 * **Автор:** Архитектурная команда
 * **Дата:** Октябрь 2026
 
@@ -13,11 +13,11 @@
 2. [Мотивация и проблематика](#2-мотивация-и-проблематика)
 3. [Ключевые архитектурные принципы](#3-ключевые-архитектурные-принципы)
 4. [Детальная спецификация компонентов](#4-детальная-спецификация-компонентов)
-   * [4.1. Детектор ботов (`detector.py`)](#41-детектор-ботов-detectorpy)
-   * [4.2. Схемы данных и семантический генератор HTML (`schemas.py`, `renderer.py`)](#42-схемы-данных-и-семантический-генератор-html-schemaspy-rendererpy)
+   * [4.1. Двухслойный гибридный детектор ботов (`detector.py`)](#41-двухслойный-гибридный-детектор-ботов-detectorpy)
+   * [4.2. Схемы данных, HtmlBuilder и генератор HTML (`schemas.py`, `renderer.py`)](#42-схемы-данных-htmlbuilder-и-генератор-html-schemaspy-rendererpy)
    * [4.3. Параметризованный диспетчер маршрутов (`router.py`)](#43-параметризованный-диспетчер-маршрутов-routerpy)
-   * [4.4. Генератор карты сайта с TTL-кэшированием (`sitemap.py`)](#44-генератор-карты-сайта-с-ttl-кэшированием-sitemappy)
-   * [4.5. Асинхронный протокол IndexNow (`indexnow.py`)](#45-асинхронный-протокол-indexnow-indexnowpy)
+   * [4.4. Генератор карты сайта и пагинация (`sitemap.py`)](#44-генератор-карты-сайта-и-пагинация-sitemappy)
+   * [4.5. Асинхронный протокол и файловый буфер IndexNow (`indexnow.py`)](#45-асинхронный-протокол-и-файловый-буфер-indexnow-indexnowpy)
    * [4.6. Базовые утилиты ядра (`rsgi_wsrpc.core.http`)](#46-базовые-утилиты-ядра-rsgi_wsrpccorehttp)
 5. [Пример интеграции в приложение](#5-пример-интеграции-в-приложение)
 6. [Производительность и безопасность](#6-производительность-и-безопасность)
@@ -31,8 +31,8 @@
 Плагин решает фундаментальную проблему индексации современных реактивных веб-приложений (SPA/PWA) на базе WebSocket и RSGI через архитектурный паттерн **Dynamic Rendering (гибридный рендеринг)**:
 * **Для обычных пользователей:** сервер отдает статический легковесный SPA `index.html` и устанавливает высокоскоростное WebSocket-соединение WSRPC (JSON-RPC 2.0).
 * **Для поисковых роботов, соцсетей и ИИ-краулеров:** сервер прозрачно перехватывает GET-запрос и генерирует за доли миллисекунды чистый семантический HTML с полным набором метатегов OpenGraph, Twitter Cards и микроразметкой Schema.org JSON-LD.
-* **Карта сайта (`sitemap.xml`):** модульный реестр провайдеров ссылок (`@register_sitemap_provider`) с поддержкой TTL-кэширования в памяти и ручной инвалидацией.
-* **Мгновенная индексация (IndexNow):** асинхронные фоновые уведомления поисковых систем (Яндекс, Bing) и раздача текстового ключа верификации.
+* **Карта сайта (`sitemap.xml`):** модульный реестр провайдеров ссылок (`@register_sitemap_provider`) с поддержкой TTL-кэширования, автоматическим переходом на `<sitemapindex>` и пагинацией при превышении лимита (50 000 URL).
+* **Надежная индексация (IndexNow):** файловый буфер-пакетировщик с защитой от перезапусков, многопроцессорной безопасностью, групповой отправкой пачек до 10 000 URL и соблюдением частотных квот Яндекса/Bing.
 
 ---
 
@@ -61,22 +61,30 @@ SPA-приложения на базе WebSockets сталкиваются с т
 1. **Zero External Dependencies:** Полное отсутствие сторонних шаблонизаторов (без Jinja2) и HTTP-клиентов (без httpx/requests/aiohttp). Вся кодовая база опирается исключительно на стандартную библиотеку Python 3.11+ и встроенный `orjson`.
 2. **Zero Overhead for Humans:** Обычные пользователи продолжают мгновенно получать закэшированный SPA `index.html`. Никакого серверного рендеринга для браузеров не происходит.
 3. **Parameterized Dynamic Routes:** Простой декларативный синтаксис `@bot_page("/path/{param:type}")` с автоматической валидацией и приведением типов (`int`, `str`, `float`, `uuid`).
-4. **TTL In-Memory Cache:** Тяжелые операции (генерация sitemap на тысячи URL) кэшируются в памяти с настраиваемым TTL и методом принудительного сброса.
+4. **TTL In-Memory Cache & Resilient Disk Buffer:** Тяжелые операции генерации карты сайта кэшируются в памяти с настраиваемым TTL, а исходящие ссылки IndexNow накапливаются на диске без потерь при перезапусках.
 
 ---
 
 ## 4. Детальная спецификация компонентов
 
-### 4.1. Детектор ботов (`detector.py`)
+### 4.1. Двухслойный гибридный детектор ботов (`detector.py`)
 
-Функция `is_bot(scope_or_ua)` проверяет входящий запрос по единому скомпилированному регистронезависимому регулярному выражению:
-* **Поисковые роботы:** `googlebot`, `yandex` (включая специализированные `yandeximages`, `yandexvideo`), `bingbot`, `baiduspider`, `duckduckbot`, `yahoo! slurp`, `mail.ru_bot`, `ecosia`.
-* **Мессенджеры и соцсети:** `telegrambot`, `vkshare`, `twitterbot`, `facebookexternalhit`, `whatsapp`, `discordbot`, `slackbot`, `linkedinbot`, `pinterest`, `skypeuripreview`, `viber`.
-* **ИИ-краулеры:** `oai-searchbot`, `chatgpt-user`, `gptbot`, `perplexitybot`, `claudebot`, `applebot-extended`, `ccbot`.
+Функция `is_bot(scope_or_ua)` производит 3-фазный гибридный анализ:
+1. **Кастомизация разработчика:**
+   * `custom_detector(scope_or_ua)`: возможность переопределить решение разработчиком.
+   * `extra_bot_patterns: List[str]`: добавление специфичных регулярных выражений.
+2. **Фаза 1 (Явные боты, соцсети и LLM):**
+   * *Поисковики:* `googlebot`, `yandex`, `bingbot`, `baiduspider`, `duckduckbot`, `yahoo! slurp`, `mail.ru_bot`, `ecosia`, `seznambot`, `sogou`.
+   * *Соцсети и мессенджеры:* `telegrambot`, `vkshare`, `twitterbot`, `facebookexternalhit`, `whatsapp`, `discordbot`, `slackbot`, `linkedinbot`, `pinterest`, `skypeuripreview`, `viber`.
+   * *ИИ-краулеры:* `chatgpt`, `oai-searchbot`, `gptbot`, `perplexitybot`, `claudebot`, `anthropic-ai`, `applebot`, `bytespider`, `ccbot`, `cohere-ai`, `diffbot`, `amazonbot`.
+3. **Фаза 1.5 (CLI и библиотеки автоматизации):**
+   * Определение `curl`, `wget`, `python-requests`, `aiohttp`, `httpx`, `urllib`, `go-http-client`, `node-fetch`, `axios`, `scrapy`.
+4. **Фаза 2 (Инвертированный вайтлист браузерных движков):**
+   * Проверка наличия движков `AppleWebKit`, `WebKit`, `Gecko`, `Trident`, `Blink`, `Chrome`, `Safari`, `Firefox`.
+   * Неизвестные клиенты без браузерного движка считаются краулерами и получают семантический HTML.
+   * Мобильные In-App WebViews (Telegram, VK, Instagram) содержат стандартный браузерный движок и гарантированно получают SPA-клиент.
 
-Функция универсальна: принимает как строку `User-Agent`, так и объект RSGI `scope` или словарь.
-
-### 4.2. Схемы данных и семантический генератор HTML (`schemas.py`, `renderer.py`)
+### 4.2. Схемы данных, HtmlBuilder и генератор HTML (`schemas.py`, `renderer.py`)
 
 Датакласс `SeoPageData`:
 ```python
@@ -98,10 +106,22 @@ class SeoPageData:
     robots: str = "index, follow"
 ```
 
+**Безопасный билдер `HtmlBuilder`:**
+Позволяет формировать семантическую разметку без внешних шаблонизаторов с автоматической защитой от XSS:
+```python
+body = (
+    HtmlBuilder()
+    .h1(topic.title)
+    .p(f"Автор: {topic.author}")
+    .article(topic.safe_content)
+    .to_html()
+)
+```
+
 Модуль `renderer.py` компилирует валидный HTML5-документ:
 * Автоматическое экранирование атрибутов через `html.escape(..., quote=True)` для защиты от XSS.
 * Генерация метатегов OpenGraph и Twitter Cards (`summary_large_image` при наличии картинки).
-* Формирование валидного блока `<script type="application/ld+json">` через `orjson.dumps()`. Если переданы `breadcrumbs`, они автоматически включаются в JSON-LD в формате `BreadcrumbList`.
+* Формирование блока `<script type="application/ld+json">` через `orjson.dumps()`. Если переданы `breadcrumbs`, они автоматически включаются в JSON-LD в формате `BreadcrumbList`.
 * Тело `<body>` включает визуальную навигацию по крошкам и семантический блок `<main class="seo-content">`.
 
 ### 4.3. Параметризованный диспетчер маршрутов (`router.py`)
@@ -124,7 +144,7 @@ async def get_topic_seo(topic_id: int, slug: str) -> Optional[SeoPageData]:
      * Возвращает `True` (запрос полностью обработан).
   4. Если запрос от обычного человека или маршрут не зарегистрирован — возвращает `False`.
 
-### 4.4. Генератор карты сайта с TTL-кэшированием (`sitemap.py`)
+### 4.4. Генератор карты сайта и пагинация (`sitemap.py`)
 
 * Декоратор `@register_sitemap_provider` подключает функции-провайдеры (синхронные или асинхронные):
   ```python
@@ -132,17 +152,18 @@ async def get_topic_seo(topic_id: int, slug: str) -> Optional[SeoPageData]:
   async def provide_articles():
       return [{"loc": "/articles/1", "lastmod": datetime.now(), "changefreq": "daily", "priority": 0.8}]
   ```
-* Автоматически регистрирует маршрут `@http_route("/sitemap.xml", ["GET"])`.
-* Генерирует XML в стандарте `http://www.sitemaps.org/schemas/sitemap/0.9`.
-* Кэширует результат в оперативной памяти согласно `sitemap_ttl` (по умолчанию 3600 сек).
-* Функция `invalidate_sitemap_cache()` позволяет мгновенно сбросить кэш (например, по сигналу шины событий).
+* Автоматическая пагинация по стандарту sitemaps.org:
+  * Если ссылок $\le 50\,000$ — отдается стандартный `<urlset>`.
+  * Если ссылок $> 50\,000$ — корневой `/sitemap.xml` отдает `<sitemapindex>` со ссылками на `/sitemap-1.xml`, `/sitemap-2.xml`...
+  * Дочерние эндпоинты `/sitemap-N.xml` автоматически регистрируются в маршрутизаторе ядра.
+* Кэширование с TTL (`sitemap_ttl`) и метод принудительной инвалидации `invalidate_sitemap_cache()`.
 
-### 4.5. Асинхронный протокол IndexNow (`indexnow.py`)
+### 4.5. Асинхронный протокол и файловый буфер IndexNow (`indexnow.py`)
 
-* Функция `notify_indexnow(urls: List[str])`:
-  * Запускает фоновую задачу (`asyncio.create_task`), возвращая управление вызывающему коду мгновенно.
-  * Выполняет отправку JSON-пакета на эндпоинты `https://api.indexnow.org/indexnow` и `https://yandex.com/indexnow`.
-  * Использует стандартную библиотеку `urllib.request` в пуле потоков через `asyncio.to_thread`.
+* **Файловая очередь:** Функция `notify_indexnow(urls)` мгновенно дописывает URL в `data/indexnow_queue.txt` (< 0.05 мс). Ссылки не теряются при перезапусках приложения.
+* **Многопроцессорная безопасность:** Атомарный захват очереди через `os.replace` исключает дублирование сетевых запросов между параллельными воркерами Granian.
+* **Пакетирование и дедупликация:** Фоновый сбросщик объединяет изменения за интервал (по умолчанию 30 мин), удаляет дубли и отправляет пачки до 10 000 URL за один POST на эндпоинты Яндекса и Bing.
+* **Уважение rate limits:** Корректная обработка `HTTP 429 (Too Many Requests)` в соответствии со спецификацией IndexNow.
 * Автоматическая отдача проверочного файла: `@http_route(f"/{key}.txt", ["GET"])` отдает текстовый ключ верификации.
 
 ### 4.6. Базовые утилиты ядра (`rsgi_wsrpc.core.http`)
