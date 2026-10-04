@@ -82,35 +82,67 @@ async def stream_request_to_disk(
     bytes_written = 0
 
     with open(dest_path, "wb") as f:
-        while True:
-            if hasattr(proto, "receive_bytes"):
-                chunk = await proto.receive_bytes()
-            elif hasattr(proto, "receive"):
-                msg = await proto.receive()
-                if isinstance(msg, bytes):
-                    chunk = msg
-                elif isinstance(msg, dict):
-                    chunk = msg.get("body", b"")
+        # 1. Нативный стриминг Granian RSGI: асинхронный итератор чанков
+        if hasattr(proto, "__aiter__"):
+            async for chunk in proto:
+                if not chunk:
+                    continue
+                bytes_written += len(chunk)
+                if bytes_written > max_size:
+                    try:
+                        f.close()
+                        dest_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise ValueError(f"Размер загружаемого файла превысил лимит ({max_size} байт)")
+                f.write(chunk)
+                hasher.update(chunk)
+
+        # 2. Granian RSGI callable proto (чтение всего тела)
+        elif callable(proto):
+            full_body = await proto()
+            if isinstance(full_body, bytes) and full_body:
+                bytes_written = len(full_body)
+                if bytes_written > max_size:
+                    try:
+                        f.close()
+                        dest_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise ValueError(f"Размер загружаемого файла превысил лимит ({max_size} байт)")
+                f.write(full_body)
+                hasher.update(full_body)
+
+        # 3. Совместимость с ASGI / моками тестов (receive_bytes / receive)
+        else:
+            while True:
+                if hasattr(proto, "receive_bytes"):
+                    chunk = await proto.receive_bytes()
+                elif hasattr(proto, "receive"):
+                    msg = await proto.receive()
+                    if isinstance(msg, bytes):
+                        chunk = msg
+                    elif isinstance(msg, dict):
+                        chunk = msg.get("body", b"")
+                    else:
+                        chunk = b""
                 else:
                     chunk = b""
-            else:
-                chunk = b""
 
-            if not chunk:
-                break
+                if not chunk:
+                    break
 
-            bytes_written += len(chunk)
-            if bytes_written > max_size:
-                # Ограничение размера файла превышено
-                try:
-                    f.close()
-                    dest_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                raise ValueError(f"Размер загружаемого файла превысил лимит ({max_size} байт)")
+                bytes_written += len(chunk)
+                if bytes_written > max_size:
+                    try:
+                        f.close()
+                        dest_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise ValueError(f"Размер загружаемого файла превысил лимит ({max_size} байт)")
 
-            f.write(chunk)
-            hasher.update(chunk)
+                f.write(chunk)
+                hasher.update(chunk)
 
     return bytes_written, hasher.hexdigest()
 
@@ -335,7 +367,19 @@ async def auth_check_upload_handler(scope, proto):
         )
         return
 
-    # Если токен найден — отдаем 200 OK
+    # Валидация подлинности и срока действия JWT токена
+    try:
+        from rsgi_wsrpc.core.security import decode_access_token
+        decode_access_token(token)
+    except Exception:
+        proto.response_str(
+            status=401,
+            headers=[("content-type", "application/json")],
+            body='{"error": "Invalid or expired token"}'
+        )
+        return
+
+    # Если токен валиден — отдаем 200 OK
     proto.response_str(
         status=200,
         headers=[("content-type", "application/json")],

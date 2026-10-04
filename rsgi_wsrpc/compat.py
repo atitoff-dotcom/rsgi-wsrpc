@@ -60,7 +60,7 @@ class _LegacyAliasFinder(MetaPathFinder):
             spec.submodule_search_locations = getattr(mod, "__path__", None)
             return spec
 
-        # 2. Иначе импортируем целевой канонический модуль
+        # 2. Иначе импортируем целевой канонический модуль, если он существует в rsgi_wsrpc
         try:
             mod = importlib.import_module(target_name)
             sys.modules[fullname] = mod
@@ -68,6 +68,10 @@ class _LegacyAliasFinder(MetaPathFinder):
             spec = ModuleSpec(fullname, loader, origin=getattr(mod, "__file__", None))
             spec.submodule_search_locations = getattr(mod, "__path__", None)
             return spec
+        except (ImportError, ModuleNotFoundError):
+            # Если в rsgi_wsrpc такого модуля нет, возвращаем None,
+            # чтобы стандартные finders Python могли найти локальный модуль пользователя
+            return None
         except Exception:
             return None
 

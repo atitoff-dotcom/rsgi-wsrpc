@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rsgi-wsrpc"
-version = "0.3.2"
+version = "0.3.3"
 description = "High-performance reactive fullstack Python framework on Rust RSGI (Granian) with symmetric WSRPC (JSON-RPC 2.0) and Tabular Data Compression."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,22 +34,22 @@ dependencies = [
 
 [project.optional-dependencies]
 db = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
 ]
 sqlite = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "aiosqlite>=0.19.0",
 ]
 postgres = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
 ]
 mysql = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "asyncmy>=0.2.9",
 ]
 full = [
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "aiosqlite>=0.19.0",
     "asyncpg>=0.29.0",
     "asyncmy>=0.2.9",
@@ -66,6 +66,10 @@ include = ["rsgi_wsrpc*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+markers = [
+    "e2e: End-to-end integration tests requiring a live running server (deselect with '-m \"not e2e\"')",
+]
+addopts = "-m 'not e2e'"
 
 
 

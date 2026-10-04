@@ -24,6 +24,8 @@
 6. [Безопасность и криптография: core/security.py](#6-безопасность-и-криптография-coresecuritypy)
 7. [Конфигурация: core/lib/config.py](#7-конфигурация-corelibconfigpy)
 8. [Клиент TypeScript/JavaScript: client/wsrpc.ts](#8-клиент-typescriptjavascript-clientwsrpcts)
+9. [Единый класс приложения: RsgiWsrpcApp](#9-единый-класс-приложения-rsgiwsrpcapp)
+10. [Масштабирование и Backplane](#10-масштабирование-и-backplane)
 
 ---
 
@@ -69,26 +71,41 @@
 
 ### Регистрация методов (`@rpc_method`)
 
-Каждый RPC-метод регистрируется с помощью декоратора `@rpc_method`:
+Каждый RPC-метод регистрируется с помощью декоратора `@rpc_method` (или `@app.rpc` при использовании `RsgiWsrpcApp`):
 
 ```python
-from core.session import rpc_method, JsonRpcSession, RPCError
+from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError, UserRole
 
-# Базовый метод
-@rpc_method("calculator.add")
-async def calculate_sum(session: JsonRpcSession, params: dict):
-    a = params.get("a", 0)
-    b = params.get("b", 0)
+# 1. Автоматическая распаковка именованных параметров (kwargs)
+@rpc_method("calculator.add", public=True)
+async def calculate_sum(a: int = 0, b: int = 0):
     return {"sum": a + b}
 
-# Метод с ограничением доступа по роли
-from core.constants import UserRole
+# 2. Доступ к объекту сессии + именованные аргументы
+@rpc_method("tasks.create")
+async def create_task(session: JsonRpcSession, title: str, priority: int = 1):
+    return {"id": 42, "title": title, "priority": priority}
 
+# 3. Классический доступ к полному словарю params
+@rpc_method("raw.echo")
+async def echo_raw(session: JsonRpcSession, params: dict):
+    return params
+
+# 4. Метод с ограничением доступа по роли
 @rpc_method("admin.restart_service", role=UserRole.ADMIN)
-async def restart_service(session: JsonRpcSession, params: dict):
+async def restart_service(session: JsonRpcSession):
     # Если у сессии нет прав администратора, ядро автоматически
     # вернет ошибку JSON-RPC клиенту: "Доступ запрещен: требуется роль admin"
     return {"status": "restarting"}
+```
+
+#### Публичные методы (`public=True`)
+По умолчанию из соображений безопасности гостевым (неавторизованным) соединениям разрешены **только** методы авторизации (префикс `login.`). 
+Если метод должен быть доступен неавторизованным пользователям (например, проверка статуса, публичный каталог, калькулятор), обязательно укажите:
+```python
+@rpc_method("system.ping", public=True)
+async def ping():
+    return {"status": "pong"}
 ```
 
 ### Кастомные роли и расширение ролевой модели (Custom Roles)
@@ -644,5 +661,55 @@ rpc.authInterceptor = async () => {
 1. **Автоматическая очередь запросов**: Если компоненты страницы вызывают защищенные методы (например, `admin.list_users` или `messages.get_conversations`), клиент автоматически удерживает все исходящие бизнес-запросы до тех пор, пока `authInterceptor` не подтвердит сессию.
 2. **Защита от дедлоков**: Системные методы и методы авторизации (`login.*`, `auth.*`, `system.*`) пропускаются через шлюз напрямую без задержек.
 3. **Бесшовный реконнект**: При обрыве связи и переподключении сокета первый же бизнес-запрос автоматически запустит переавторизацию новой сессии, предотвращая ошибки `401 / Forbidden` по всему интерфейсу.
+
+---
+
+## 9. Единый класс приложения: RsgiWsrpcApp
+
+Начиная с версии `0.3.3`, создание и запуск приложений на `rsgi-wsrpc` унифицированы в классе `RsgiWsrpcApp`:
+
+```python
+from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
+
+app = RsgiWsrpcApp(
+    secret_key="production-secret-key",
+    database_url="sqlite+aiosqlite:///app.db",
+    static_dir="./public",       # Нативная Zero-Copy раздача статики (Rust RSGI)
+    index_file="index.html",     # Автоматическая отдача на GET /
+    login_rpc="login.",          # Префикс методов, доступных гостям
+    cors=True,                   # Автоматический CORS preflight OPTIONS
+    backplane=None               # Шина для multi-worker масштабирования (опционально)
+)
+
+# Регистрация RPC-методов через декоратор приложения
+@app.rpc("tasks.get_all", public=False)
+@tabular_response(fields=["id", "title"])
+async def get_tasks():
+    return [{"id": 1, "title": "Задача 1"}]
+
+# Запуск приложения
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8080, workers=1)
+```
+
+### Возможности `RsgiWsrpcApp`:
+1. **Rust Zero-Copy раздача статики**: Для файлов в `static_dir` используется нативный вызов Granian RSGI `proto.response_file`, минуя чтение байтов в Python-память.
+2. **Защита от Path Traversal**: Пути нормализуются с проверкой `resolve().startswith(static_dir)`. Попытки выйти за пределы каталога возвращают `403 Forbidden`.
+3. **Хуки жизненного цикла**: Автоматически реализует методы RSGI протокола `__rsgi_init__` и `__rsgi_del__`, выполняя зарегистрированные функции `@on_startup` и `@on_shutdown`.
+
+---
+
+## 10. Масштабирование и Backplane
+
+Для обеспечения горизонтального масштабирования в кластере или запуска нескольких воркеров Granian (`workers > 1`) используется шина сообщений:
+
+```python
+from rsgi_wsrpc.core.backplane import BaseBackplane, MemoryBackplane
+```
+
+* **`BaseBackplane`** — абстрактный контракт с методами `publish(channel, payload)`, `subscribe(channel, callback)`, `unsubscribe(channel)`.
+* **`MemoryBackplane`** — легковесная in-memory шина по умолчанию (для `workers=1`).
+* **Внимание при `workers > 1`**: Сессии WebSocket хранятся в памяти конкретного процесса операционной системы. При запуске нескольких воркеров без распределенного бэкплейна (Redis / Postgres) фреймворк выводит предупреждение в лог. Для продакшена с несколькими процессами подключайте Redis-бэкплейн.
+
 
 

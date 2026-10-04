@@ -12,20 +12,12 @@ def get_auth_settings() -> Dict[str, Any]:
     Возвращает словарь настроек auth из конфигурации приложения.
     """
     try:
-        from app.config import settings
-        auth_conf = getattr(settings, "auth", None)
-        if auth_conf and isinstance(auth_conf, dict):
-            return auth_conf
-        if hasattr(auth_conf, "__dict__"):
-            return {k: v for k, v in auth_conf.__dict__.items() if not k.startswith("_")}
-    except Exception:
-        pass
-
-    try:
         from rsgi_wsrpc.core.lib.config import settings as core_settings
         auth_conf = getattr(core_settings, "auth", None)
         if auth_conf and isinstance(auth_conf, dict):
             return auth_conf
+        if hasattr(auth_conf, "__dict__"):
+            return {k: v for k, v in auth_conf.__dict__.items() if not k.startswith("_")}
     except Exception:
         pass
 

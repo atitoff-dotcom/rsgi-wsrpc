@@ -94,13 +94,13 @@ class PersonaManager:
         """Вспомогательный метод для гарантии наличия пользователя в локальной БД."""
         try:
             try:
+                from rsgi_wsrpc.plugins.db import async_session
+                from rsgi_wsrpc.plugins.auth.models import User, Role
+                from rsgi_wsrpc.plugins.auth.core import system_bypass_ctx
+            except ImportError:
                 from plugins.db import async_session
                 from plugins.auth.models import User, Role
                 from plugins.auth.core import system_bypass_ctx
-            except ImportError:
-                from app.system.db import async_session
-                from app.system.auth.models import User, Role
-                from app.system.auth.core import system_bypass_ctx
             from sqlalchemy import select
             from sqlalchemy.orm import selectinload
             from core.logger import logger

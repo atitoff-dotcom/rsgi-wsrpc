@@ -22,13 +22,15 @@ from rsgi_wsrpc.core.lifecycle import (
 )
 from rsgi_wsrpc.core.logger import logger, setup_logging
 from rsgi_wsrpc.core.lib.config import configure, get_config
+from rsgi_wsrpc.app import RsgiWsrpcApp
 
 from rsgi_wsrpc import core
 from rsgi_wsrpc import plugins
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 __all__ = [
+    "RsgiWsrpcApp",
     "rpc_method",
     "RPCError",
     "JsonRpcSession",

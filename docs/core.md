@@ -24,6 +24,8 @@ The core is engineered following Clean Architecture principles:
 6. [Security & Cryptography: core/security.py](#6-security--cryptography-coresecuritypy)
 7. [Configuration: core/lib/config.py](#7-configuration-corelibconfigpy)
 8. [TypeScript/JavaScript Client: client/wsrpc.ts](#8-typescriptjavascript-client-clientwsrpcts)
+9. [Unified Application Class: RsgiWsrpcApp](#9-unified-application-class-rsgiwsrpcapp)
+10. [Horizontal Scaling & Backplane](#10-horizontal-scaling--backplane)
 
 ---
 
@@ -69,26 +71,41 @@ The `core/session.py` module is the foundation of the framework. It upgrades raw
 
 ### Method Registration (`@rpc_method`)
 
-Each RPC method is registered using the `@rpc_method` decorator:
+Each RPC method is registered using the `@rpc_method` decorator (or `@app.rpc` when using `RsgiWsrpcApp`):
 
 ```python
-from core.session import rpc_method, JsonRpcSession, RPCError
+from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError, UserRole
 
-# Basic method
-@rpc_method("calculator.add")
-async def calculate_sum(session: JsonRpcSession, params: dict):
-    a = params.get("a", 0)
-    b = params.get("b", 0)
+# 1. Automatic kwargs unpacking
+@rpc_method("calculator.add", public=True)
+async def calculate_sum(a: int = 0, b: int = 0):
     return {"sum": a + b}
 
-# Method restricted by user role
-from core.constants import UserRole
+# 2. Session access + named arguments
+@rpc_method("tasks.create")
+async def create_task(session: JsonRpcSession, title: str, priority: int = 1):
+    return {"id": 42, "title": title, "priority": priority}
 
+# 3. Direct access to raw params dict
+@rpc_method("raw.echo")
+async def echo_raw(session: JsonRpcSession, params: dict):
+    return params
+
+# 4. Role-restricted method
 @rpc_method("admin.restart_service", role=UserRole.ADMIN)
-async def restart_service(session: JsonRpcSession, params: dict):
+async def restart_service(session: JsonRpcSession):
     # If the session lacks admin privileges, the core automatically
     # returns a standard JSON-RPC error: "Access denied: requires role admin"
     return {"status": "restarting"}
+```
+
+#### Public Methods (`public=True`)
+For security, unauthenticated guest connections are restricted by default to methods matching `login.*`.
+To make an RPC method accessible to guests without login (e.g., public catalogs, health ping), specify `public=True`:
+```python
+@rpc_method("system.ping", public=True)
+async def ping():
+    return {"status": "pong"}
 ```
 
 ### Custom Roles & Extending the Role Model
@@ -644,5 +661,54 @@ rpc.authInterceptor = async () => {
 1. **Automatic Request Queueing**: When UI components invoke protected methods (such as `admin.list_users` or `messages.get_conversations`), the client automatically holds all outgoing non-auth calls until `authInterceptor` finishes validating the session.
 2. **Deadlock Prevention**: Authentication and system methods (`login.*`, `auth.*`, `system.*`) automatically bypass the gatekeeper.
 3. **Seamless Reconnection**: After network drops, the first subsequent RPC request automatically triggers re-authentication before sending payload data, preventing `401 / Forbidden` errors across the entire UI.
+
+---
+
+## 9. Unified Application Class: RsgiWsrpcApp
+
+Starting in version `0.3.3`, application configuration and bootstrapping are unified under `RsgiWsrpcApp`:
+
+```python
+from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
+
+app = RsgiWsrpcApp(
+    secret_key="production-secret-key",
+    database_url="sqlite+aiosqlite:///app.db",
+    static_dir="./public",       # Zero-Copy static files via Rust RSGI
+    index_file="index.html",     # Automatically served on GET /
+    login_rpc="login.",          # Method prefix allowed for guests
+    cors=True,                   # Automatic CORS preflight OPTIONS
+    backplane=None               # Backplane instance for multi-worker setups
+)
+
+# Register RPC handlers using application decorator
+@app.rpc("tasks.get_all", public=False)
+@tabular_response(fields=["id", "title"])
+async def get_tasks():
+    return [{"id": 1, "title": "Task 1"}]
+
+# Launch server
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8080, workers=1)
+```
+
+### Features of `RsgiWsrpcApp`:
+1. **Rust Zero-Copy Static Serving**: For files in `static_dir`, Granian RSGI's native `proto.response_file` is invoked, bypassing Python byte buffering completely.
+2. **Path Traversal Protection**: Paths are strictly verified against `resolve().startswith(static_dir)`, returning `403 Forbidden` on escape attempts.
+3. **Lifecycle Management**: Automatically implements RSGI protocol hooks `__rsgi_init__` and `__rsgi_del__` to run registered `@on_startup` and `@on_shutdown` callbacks.
+
+---
+
+## 10. Horizontal Scaling & Backplane
+
+For multi-worker Granian deployments (`workers > 1`) or clustering, the messaging backplane abstraction provides inter-process communication:
+
+```python
+from rsgi_wsrpc.core.backplane import BaseBackplane, MemoryBackplane
+```
+
+* **`BaseBackplane`**: Abstract contract with `publish(channel, payload)`, `subscribe(channel, callback)`, and `unsubscribe(channel)`.
+* **`MemoryBackplane`**: Lightweight in-memory implementation for single-worker processes (`workers=1`).
+* **Multi-Worker Notice**: In-memory sessions reside in individual OS worker process memory. When launching multiple workers without a shared backplane (Redis / Postgres), a warning is logged. For distributed production deployments, attach a Redis-backed backplane.
 
 

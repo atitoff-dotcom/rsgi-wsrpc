@@ -26,6 +26,8 @@ class RPCClientError(Exception):
 
 
 class TestClient:
+    __test__ = False
+
     def __init__(self, target: Optional[TargetConfig] = None):
         self.target = target or get_target()
         self._http_session: Optional[aiohttp.ClientSession] = None

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from typing import Callable, List
 from .logger import logger
 
@@ -20,7 +21,7 @@ async def run_startup_callbacks() -> None:
     for callback in STARTUP_CALLBACKS:
         logger.info(f"[Lifecycle] Выполнение {callback.__name__}...")
         try:
-            if asyncio.iscoroutinefunction(callback):
+            if inspect.iscoroutinefunction(callback):
                 await callback()
             else:
                 callback()
@@ -49,7 +50,7 @@ async def run_shutdown_callbacks() -> None:
     for callback in SHUTDOWN_CALLBACKS:
         logger.info(f"[Lifecycle] Выполнение {callback.__name__}...")
         try:
-            if asyncio.iscoroutinefunction(callback):
+            if inspect.iscoroutinefunction(callback):
                 await callback()
             else:
                 callback()

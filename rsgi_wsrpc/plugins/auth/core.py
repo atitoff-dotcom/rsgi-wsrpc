@@ -5,7 +5,7 @@
 """
 
 from contextvars import ContextVar
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr
 from sqlalchemy import Integer, DateTime, func
@@ -53,5 +53,48 @@ class RowSecureModel(BasicSecureModel):
 # Совместимый алиас
 SecureModelBase = RowSecureModel
 
+
+class AuthSession:
+    """
+    Стандартный объект сессии пользователя, привязанный к WebSocket-соединению.
+    """
+    def __init__(
+        self,
+        uid: int,
+        user: Any,
+        user_name: str,
+        user_role: Any,
+        user_roles: list,
+        session_db_id: int,
+        user_ctx: Any = None,
+        send_request_cb: Any = None,
+        send_stream_cb: Any = None,
+        close_cb: Any = None,
+    ):
+        self.uid = uid
+        self.user = user
+        self.user_name = user_name
+        self.user_role = user_role
+        self.user_roles = user_roles
+        self.session_db_id = session_db_id
+        self.user_ctx = user_ctx
+        self._send_request_cb = send_request_cb
+        self._send_stream_cb = send_stream_cb
+        self._close_cb = close_cb
+
+    async def send_request(self, method: str, params: dict = None, timeout: float = 5.0):
+        if self._send_request_cb:
+            return await self._send_request_cb(method, params, timeout=timeout)
+        raise ConnectionError("No transport available")
+
+    async def send_stream(self, rpc_id: Any, chunk: Any):
+        if self._send_stream_cb:
+            return await self._send_stream_cb(rpc_id, chunk)
+
+    async def close(self):
+        if self._close_cb:
+            return await self._close_cb()
+
+
 # Регистрируем SQLAlchemy event listeners для автоматического контроля прав на уровне ORM
-import plugins.auth.security  # noqa: F401
+from . import security  # noqa: F401

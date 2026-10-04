@@ -23,7 +23,8 @@
    * [Modular Backend Test Framework (tests/)](#5-modular-backend-test-framework-tests)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
-10. [License](#-license)
+10. [🌟 What's New in v0.3.3](#-whats-new-in-v033)
+11. [License](#-license)
 
 ---
 
@@ -231,6 +232,9 @@ Modules in `app/<module>/` are strictly decoupled. When assigning an AI agent a 
 * **Higher Precision**: Eliminates hallucinations caused by oversized, noisy context windows.
 * **Direct Cost Reduction**: Lowers operational API billing on commercial models.
 
+#### 4. Built-in AI Guide (`AGENTS.md`)
+The repository root includes a dedicated instruction file [AGENTS.md](AGENTS.md) tailored for AI coding assistants (Cursor, Antigravity, Claude Code, Windsurf, ChatGPT). It codifies framework architecture, `@rpc_method` contracts, keyword argument auto-mapping, Tabular compression (RFC 0002), and anti-hallucination guardrails. This document is updated with every release.
+
 ---
 
 ## 🚀 Installation & Quickstart
@@ -275,29 +279,44 @@ The launcher automatically provisions a `.venv`, installs dependencies, and boot
 
 ### 🛠 Option B: Minimal Server (`main.py`)
 ```python
-from core.session import rpc_method, JsonRpcSession
-from core.lifecycle import on_startup
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
 
-# Register RPC method
-@rpc_method("math.add")
-async def add_numbers(session: JsonRpcSession, params: dict):
-    a = params.get("a", 0)
-    b = params.get("b", 0)
+# 1. Code-First application entrypoint
+app = RsgiWsrpcApp(
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    static_dir="./public",     # Zero-Copy static files via Rust RSGI
+    index_file="index.html",   # Auto-served on GET /
+    cors=True
+)
+
+# 2. Public RPC method with auto-unpacked kwargs
+@app.rpc("math.add", public=True)
+async def add_numbers(a: int = 0, b: int = 0):
     return {"result": a + b}
 
-# Multi-return streaming progress method
-@rpc_method("task.run_long")
-async def run_task(session: JsonRpcSession, params: dict):
-    rpc_id = params.get("rpc_id")
+# 3. Multi-return streaming progress method
+@app.rpc("task.run_long")
+async def run_task(session, rpc_id: int = 0):
     for step in range(1, 4):
         # Transmit intermediate progress chunk to the socket
         await session.send_stream_chunk(rpc_id, {"progress": step * 33})
     return {"status": "completed"}
+
+# 4. Run server (or via granian CLI)
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8080, workers=1)
 ```
 
-### 2. Launch Server via Granian
+### 2. Launch Server
+Via Python:
 ```bash
-granian --interface rsgi --host 127.0.0.1 --port 8080 main:app
+python main.py
+```
+Or directly using Granian CLI (recommended for production):
+```bash
+granian --rsgi main:app --host 127.0.0.1 --port 8080 --workers 1
 ```
 
 ### 3. Invoke from Client (JavaScript / TypeScript)
@@ -508,6 +527,35 @@ rpc.registerMethod('ui.confirm', async (params) => {
 ```
 
 > 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](docs/core.md#8-typescriptjavascript-client-clientwsrpcts)**.
+
+---
+
+## 🌟 What's New in v0.3.3
+
+* 🚀 **Unified `RsgiWsrpcApp` Application Class**:
+  * Single-call Code-First initialization configuring secrets, database, CORS, and static file hosting.
+  * Native Zero-Copy static file serving via Rust Granian `proto.response_file`.
+  * Path traversal protection when serving files from `static_dir`.
+  * Automatic CORS preflight (`OPTIONS`) and `Access-Control-Allow-*` header handling.
+  * Integrated `app.run(host, port, workers)` for clean programmatic startups without shell scripts.
+* ⚡ **Kwargs Auto-Unpacking in `@rpc_method` / `@app.rpc`**:
+  * Handlers can define clean signatures with type hints and defaults: `async def fn(session, a: int, b: str = "default")`.
+  * JSON-RPC `params` dictionaries are mapped directly into keyword arguments.
+* 🛡 **Access Control & `public=True`**:
+  * Guest connections are restricted to `login.*` methods by default.
+  * Public endpoints for unauthenticated users are declared explicitly with `@rpc_method("name", public=True)`.
+* 🔒 **Enhanced Security & Cryptography**:
+  * Default PBKDF2 iterations increased from 100,000 to **600,000** following OWASP standards.
+  * Side-channel timing attack protection: password verification hardened using `hmac.compare_digest`.
+  * RSA key generation offloaded to threadpool with cache rotation to eliminate event-loop starvation.
+* 📦 **Streaming File Uploads (Granian RSGI)**:
+  * Chunked request body ingestion via `proto.read()` directly to disk ensuring constant $O(1)$ memory usage.
+  * Upload authorization verification via `/auth-check-upload` supporting `Authorization: Bearer <token>`.
+* 🌐 **Scalability Backplane**:
+  * Added `rsgi_wsrpc.core.backplane` module with `BaseBackplane` contract and `MemoryBackplane`.
+  * Multi-worker startup warning logged when `workers > 1` is configured with in-memory state.
+* 🤖 **AI-Native Guide `AGENTS.md`**:
+  * Included a dedicated LLM instruction file in the repository root to guarantee zero-hallucination agentic development.
 
 ---
 

@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import time
 from contextvars import ContextVar
 from itertools import count
@@ -22,20 +23,35 @@ RPC_REGISTRY = {}
 class RPCError(Exception):
     """
     Исключение для RPC-ошибок, сообщения которых возвращаются клиенту.
+    Поддерживает как передачу (message), так и (code, message).
     """
-    def __init__(self, message: str):
-        self.message = message
-        super().__init__(message)
+    def __init__(self, code_or_message: Any, message: Optional[str] = None):
+        if message is not None:
+            self.code = int(code_or_message)
+            self.message = str(message)
+        elif isinstance(code_or_message, int):
+            self.code = code_or_message
+            self.message = "RPC Error"
+        else:
+            self.code = -32000
+            self.message = str(code_or_message)
+        super().__init__(self.message)
 
 
-def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False, *args, **kwargs):
+
+def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False, public: bool = False, *args, **kwargs):
     """
     Декоратор для регистрации RPC-методов.
 
-    Позволяет опционально ограничить доступ по роли пользователя (параметр role).
+    :param role: Ограничить доступ по роли пользователя.
+    :param public: Если True, метод доступен неавторизованным гостям даже при включенном login_rpc.
     """
     def decorator(func):
         method_name = name or func.__name__
+
+        sig = inspect.signature(func)
+        param_names = list(sig.parameters.keys())
+        expects_session_and_params = len(param_names) == 2 and param_names[0] in ("session", "self", "s") and param_names[1] in ("params", "args", "data", "p")
 
         async def wrapper(session, params):
             """
@@ -44,12 +60,40 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
             if role is not None:
                 from .constants import UserRole
                 user_role = getattr(session, "user_role", UserRole.GUEST)
-                if user_role != UserRole.ADMIN and user_role != role:
-                    raise RPCError(f"Доступ запрещен: требуется роль {role.value if hasattr(role, 'value') else role}")
-            return await func(session, params)
+                user_roles = getattr(session, "user_roles", None)
+                allowed = (user_role == UserRole.ADMIN or user_role == role)
+                if not allowed and user_roles:
+                    allowed = (UserRole.ADMIN in user_roles or role in user_roles)
+                if not allowed:
+                    role_repr = role.value if hasattr(role, "value") else role
+                    raise RPCError(-32003, f"Доступ запрещен: требуется роль {role_repr}")
+
+            if expects_session_and_params:
+                return await func(session, params)
+
+            # Если первый аргумент явно session/self
+            if param_names and param_names[0] in ("session", "self", "s"):
+                if isinstance(params, dict):
+                    # Отфильтруем только те аргументы, которые ожидает функция (или передадим все, если есть **kwargs)
+                    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                    kw = params if has_var_kw else {k: v for k, v in params.items() if k in sig.parameters}
+                    return await func(session, **kw)
+                return await func(session, params)
+
+            # Если сигнатура ожидает только именованные параметры без явного session
+            if isinstance(params, dict):
+                has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                kw = params if has_var_kw else {k: v for k, v in params.items() if k in sig.parameters}
+                return await func(**kw)
+
+            if len(param_names) == 1:
+                return await func(params)
+
+            return await func()
 
         RPC_REGISTRY[method_name] = wrapper
         wrapper.http = http
+        wrapper.public = public
         return func
     return decorator
 
@@ -62,7 +106,7 @@ class JsonRpcSession:
         "_id_generator", "_pending_requests", "_auth_timeout_task", "_idle_timeout_task",
         "_is_alive", "_handler_tasks", "tokens", "rate_limit_enabled", "_closed",
         "_reset_timer_handle", "_main_task", "last_activity",
-        "ip", "data", "_on_close_callbacks"
+        "ip", "data", "_on_close_callbacks", "_close_tasks"
     )
 
     def __init__(self, ws, session_id: int, ip: str = "0.0.0.0"):
@@ -72,6 +116,7 @@ class JsonRpcSession:
         self.ip = ip
         self.data = None
         self._on_close_callbacks = []
+        self._close_tasks = set()
         ACTIVE_SESSIONS_SET.add(self)
 
         self._id_generator = count()
@@ -97,6 +142,26 @@ class JsonRpcSession:
     def authenticated(self) -> bool:
         return self.data is not None
 
+    async def send_str(self, payload_str: str) -> bool:
+        """
+        Безопасная неблокирующая отправка текстового payload в WebSocket.
+        Изолирует ошибки закрытого сокета и обходит несовместимость Future.cancelled в Python 3.13+/Granian.
+        """
+        if self._closed or not self.ws:
+            return False
+        try:
+            awaitable = self.ws.send_str(payload_str)
+            if not hasattr(awaitable, "cancelled"):
+                try:
+                    awaitable.cancelled = lambda: False
+                except AttributeError:
+                    pass
+            await awaitable
+            return True
+        except Exception as e:
+            logger.debug(f"[Сессия {self.session_id}] Ошибка отправки в сокет: {e}")
+            return False
+
     def _reset_tokens_loop(self):
         """Быстрый таймер сброса лимитов без создания тяжелых asyncio.Task"""
         if self._closed:
@@ -112,18 +177,19 @@ class JsonRpcSession:
         # Запускаем ежесекундный сброс лимитов
         self._reset_tokens_loop()
         
+        max_message_size = settings.security.get("max_message_size", 10 * 1024 * 1024)
+
         try:
             while True:
                 msg = await self.ws.receive()
                 self.last_activity = time.time()
-                logger.info("[Бэкенд] Получено сообщение")
-                # --- ИДЕАЛЬНАЯ ПРОВЕРКА НА ДИСКОННЕКТ ПО ТИПУ ОБЪЕКТА ---
-                # Если прилетел объект WebsocketInboundCloseMessage (или пустой msg)
+                logger.debug(f"[Сессия {self.session_id}] Получено сообщение")
+
+                # --- ПРОВЕРКА НА ДИСКОННЕКТ ПО ТИПУ ОБЪЕКТА ---
                 if not msg or "CloseMessage" in type(msg).__name__:
-                    # Просто выходим из цикла, падая в finally -> close()
                     logger.info(f"disconnect: session_id {self.session_id}")
                     break 
-                # --------------------------------------------------------
+                # ---------------------------------------------
                     
                 self._is_alive = True              
 
@@ -136,11 +202,24 @@ class JsonRpcSession:
                         break 
                 # -------------------------------------
 
+                raw_data = getattr(msg, "data", None)
+                if raw_data is None:
+                    continue
+
+                if len(raw_data) > max_message_size:
+                    logger.warning(f"[Защита] Сессия {self.session_id}: превышен лимит размера сообщения ({len(raw_data)} > {max_message_size})")
+                    await self._send_error(None, -32600, "Message too large")
+                    continue
+
                 try:
-                    data = orjson.loads(msg.data)
+                    data = orjson.loads(raw_data)
                 except Exception as e:
-                    logger.error(f"[Бэкенд] Критическая ошибка парсинга orjson: {e}")
+                    logger.warning(f"[Сессия {self.session_id}] Ошибка парсинга orjson: {e}")
                     await self._send_error(None, -32700, "Parse error")
+                    continue
+
+                if not isinstance(data, dict):
+                    await self._send_error(None, -32600, "Invalid Request: root must be a JSON object")
                     continue
 
                 rpc_id = data.get("id")
@@ -156,16 +235,24 @@ class JsonRpcSession:
                     continue
 
                 method_name = data.get("method")
+                if not isinstance(method_name, str):
+                    await self._send_error(rpc_id, -32600, "Invalid Request: method must be string")
+                    continue
+
                 params = data.get("params", {})
+                if not isinstance(params, (dict, list)):
+                    await self._send_error(rpc_id, -32602, "Invalid params: must be object or array")
+                    continue
 
                 handler = RPC_REGISTRY.get(method_name)
                 if not handler:
                     await self._send_error(rpc_id, -32601, f"Method '{method_name}' not found")
                     continue
 
-                # Проверка авторизации на основе конфигурационного префикса
+                # Проверка авторизации: гостям разрешены только login_rpc префикс или методы с public=True
                 login_rpc = settings.security.get("login_rpc")
-                if login_rpc and not self.authenticated and not method_name.startswith(login_rpc):
+                is_public_method = getattr(handler, "public", False)
+                if login_rpc and not self.authenticated and not is_public_method and not method_name.startswith(login_rpc):
                     await self._send_error(rpc_id, -32001, "Unauthorized.")
                     continue
 
@@ -179,7 +266,7 @@ class JsonRpcSession:
             # Гарантированная очистка ресурсов в одной точке
             await self.close()
 
-    async def _run_rpc_handler(self, handler, method_name: str, rpc_id, params: dict):
+    async def _run_rpc_handler(self, handler, method_name: str, rpc_id, params):
         transport_token = current_transport_ctx.set(self)
         session_token = current_session_ctx.set(self.data)
         rpc_token = current_rpc_id_ctx.set(rpc_id)
@@ -197,18 +284,12 @@ class JsonRpcSession:
                 "jsonrpc": "2.0", "result": result, "id": rpc_id
             }).decode("utf-8")
             
-            # Обход бага совместимости Python 3.13 с Granian
-            awaitable = self.ws.send_str(payload_str)
-            if not hasattr(awaitable, "cancelled"):
-                try:
-                    awaitable.cancelled = lambda: False
-                except AttributeError:
-                    pass
-            await awaitable
+            await self.send_str(payload_str)
             
         except RPCError as e:
-            # Возвращаем ожидаемую ошибку RPC клиенту
-            await self._send_error(rpc_id, -32000, e.message)
+            # Возвращаем ожидаемую ошибку RPC клиенту с указанным кодом
+            err_code = getattr(e, "code", -32000)
+            await self._send_error(rpc_id, err_code, e.message)
         except Exception as e:
             logger.error(f"[RPC Error] Ошибка в хендлере {method_name}: {e}")
             await self._send_error(rpc_id, -32603, "Internal server error")
@@ -231,16 +312,12 @@ class JsonRpcSession:
         self._pending_requests[rpc_id] = fut
         
         payload_str = orjson.dumps(payload).decode("utf-8")
+        await self.send_str(payload_str)
         
-        awaitable = self.ws.send_str(payload_str)
-        if not hasattr(awaitable, "cancelled"):
-            try:
-                awaitable.cancelled = lambda: False
-            except AttributeError:
-                pass
-        await awaitable
-        
-        return await asyncio.wait_for(fut, timeout=timeout)
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        finally:
+            self._pending_requests.pop(rpc_id, None)
 
     async def _auth_timeout_loop(self):
         try:
@@ -269,13 +346,7 @@ class JsonRpcSession:
                         payload_str = orjson.dumps({
                             "jsonrpc": "2.0", "method": "session.expired", "params": {}
                         }).decode("utf-8")
-                        awaitable = self.ws.send_str(payload_str)
-                        if not hasattr(awaitable, "cancelled"):
-                            try:
-                                awaitable.cancelled = lambda: False
-                            except AttributeError:
-                                pass
-                        await awaitable
+                        await self.send_str(payload_str)
                     except Exception:
                         pass
                     
@@ -288,37 +359,18 @@ class JsonRpcSession:
     async def send_stream_chunk(self, rpc_id, chunk_data):
         if self._closed or not self.ws:
             return
-        try:
-            payload_str = orjson.dumps({
-                "jsonrpc": "2.0", "result": {"stream": True, "data": chunk_data}, "id": rpc_id
-            }).decode("utf-8")
-            awaitable = self.ws.send_str(payload_str)
-            if not hasattr(awaitable, "cancelled"):
-                try:
-                    awaitable.cancelled = lambda: False
-                except AttributeError:
-                    pass
-            await awaitable
-        except Exception:
-            pass
+        payload_str = orjson.dumps({
+            "jsonrpc": "2.0", "result": {"stream": True, "data": chunk_data}, "id": rpc_id
+        }).decode("utf-8")
+        await self.send_str(payload_str)
 
     async def _send_error(self, rpc_id, code: int, message: str):
         if self._closed or not self.ws:
             return
-        try:
-            payload_str = orjson.dumps({
-                "jsonrpc": "2.0", "error": {"code": code, "message": message}, "id": rpc_id
-            }).decode("utf-8")
-            
-            awaitable = self.ws.send_str(payload_str)
-            if not hasattr(awaitable, "cancelled"):
-                try:
-                    awaitable.cancelled = lambda: False
-                except AttributeError:
-                    pass
-            await awaitable
-        except Exception:
-            pass
+        payload_str = orjson.dumps({
+            "jsonrpc": "2.0", "error": {"code": code, "message": message}, "id": rpc_id
+        }).decode("utf-8")
+        await self.send_str(payload_str)
 
     async def close(self):
         if self._closed:
@@ -327,7 +379,7 @@ class JsonRpcSession:
 
         current_task = asyncio.current_task()
 
-        # Безопасно завершаем таску таймаута без риска рекурсии
+        # Безопасно завершаем таски таймаутов без риска рекурсии
         if self._auth_timeout_task and self._auth_timeout_task != current_task and not self._auth_timeout_task.done():
             self._auth_timeout_task.cancel()
             
@@ -355,8 +407,10 @@ class JsonRpcSession:
         # Вызов зарегистрированных колбэков закрытия сессии
         for callback in self._on_close_callbacks:
             try:
-                if asyncio.iscoroutinefunction(callback):
-                    asyncio.create_task(callback(self))
+                if inspect.iscoroutinefunction(callback):
+                    task = asyncio.create_task(callback(self))
+                    self._close_tasks.add(task)
+                    task.add_done_callback(self._close_tasks.discard)
                 else:
                     callback(self)
             except Exception as e:
@@ -367,6 +421,6 @@ class JsonRpcSession:
 
     def __del__(self):
         try:
-            logger.info(f"[Сессия] Уничтожена: ID {self.session_id}")
+            logger.debug(f"[Сессия] Уничтожена: ID {self.session_id}")
         except Exception:
             pass

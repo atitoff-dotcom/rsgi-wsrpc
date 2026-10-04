@@ -8,13 +8,13 @@
 ## 🧭 Table of Contents
 1. [Core Philosophy & Manifesto](#-core-philosophy--manifesto)
 2. [Architecture: Core + Plugins + Application](#-architecture-core--plugins--application)
-   * [Architecture for Beginners with Diagrams (docs/architecture_for_beginners.md)](architecture_for_beginners.md)
+   * [Architecture for Beginners with Diagrams (architecture_for_beginners.md)](architecture_for_beginners.md)
    * [Recommended Project Structure (Directory Tree)](#-recommended-project-structure-directory-tree)
 3. [Comparison: rsgi-wsrpc vs Django vs FastAPI](#-comparison-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [🤖 AI-Native: Token-Efficient & Purpose-Built for LLMs](#-ai-native-token-efficient--purpose-built-for-llms)
 5. [Quickstart in 60 Seconds](#-quickstart-in-60-seconds)
 6. [Core Network Engine](#-core-network-engine)
-   * [Complete Core Developer Guide (docs/core.md)](docs/core.md)
+   * [Complete Core Developer Guide (core.md)](core.md)
 7. [Official System Plugins](#-official-system-plugins)
    * [Database Plugin (db)](#1-database-plugin-pluginsdb)
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
@@ -23,7 +23,8 @@
    * [Modular Backend Test Framework (tests/)](#5-modular-backend-test-framework-tests)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
-10. [License](#-license)
+10. [🌟 What's New in v0.3.3](#-whats-new-in-v033)
+11. [License](#-license)
 
 ---
 
@@ -134,7 +135,7 @@ my_project/
 ├── client/                         # 💻 CLIENT LIBRARIES
 │   └── wsrpc.ts                    # Official TypeScript/JavaScript WSRPC client
 │
-├── docs/                           # 📚 Framework Documentation (EN)
+├──                            # 📚 Framework Documentation (EN)
 │   ├── readme.md
 │   ├── core.md                     # Comprehensive Core developer guide
 │   └── files.md                    # Two-phase file upload guide (2PC)
@@ -231,6 +232,9 @@ Modules in `app/<module>/` are strictly decoupled. When assigning an AI agent a 
 * **Higher Precision**: Eliminates hallucinations caused by oversized, noisy context windows.
 * **Direct Cost Reduction**: Lowers operational API billing on commercial models.
 
+#### 4. Built-in AI Guide (`AGENTS.md`)
+The repository root includes a dedicated instruction file [AGENTS.md](AGENTS.md) tailored for AI coding assistants (Cursor, Antigravity, Claude Code, Windsurf, ChatGPT). It codifies framework architecture, `@rpc_method` contracts, keyword argument auto-mapping, Tabular compression (RFC 0002), and anti-hallucination guardrails. This document is updated with every release.
+
 ---
 
 ## 🚀 Installation & Quickstart
@@ -275,29 +279,44 @@ The launcher automatically provisions a `.venv`, installs dependencies, and boot
 
 ### 🛠 Option B: Minimal Server (`main.py`)
 ```python
-from core.session import rpc_method, JsonRpcSession
-from core.lifecycle import on_startup
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
 
-# Register RPC method
-@rpc_method("math.add")
-async def add_numbers(session: JsonRpcSession, params: dict):
-    a = params.get("a", 0)
-    b = params.get("b", 0)
+# 1. Code-First application entrypoint
+app = RsgiWsrpcApp(
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    static_dir="./public",     # Zero-Copy static files via Rust RSGI
+    index_file="index.html",   # Auto-served on GET /
+    cors=True
+)
+
+# 2. Public RPC method with auto-unpacked kwargs
+@app.rpc("math.add", public=True)
+async def add_numbers(a: int = 0, b: int = 0):
     return {"result": a + b}
 
-# Multi-return streaming progress method
-@rpc_method("task.run_long")
-async def run_task(session: JsonRpcSession, params: dict):
-    rpc_id = params.get("rpc_id")
+# 3. Multi-return streaming progress method
+@app.rpc("task.run_long")
+async def run_task(session, rpc_id: int = 0):
     for step in range(1, 4):
         # Transmit intermediate progress chunk to the socket
         await session.send_stream_chunk(rpc_id, {"progress": step * 33})
     return {"status": "completed"}
+
+# 4. Run server (or via granian CLI)
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8080, workers=1)
 ```
 
-### 2. Launch Server via Granian
+### 2. Launch Server
+Via Python:
 ```bash
-granian --interface rsgi --host 127.0.0.1 --port 8080 main:app
+python main.py
+```
+Or directly using Granian CLI (recommended for production):
+```bash
+granian --rsgi main:app --host 127.0.0.1 --port 8080 --workers 1
 ```
 
 ### 3. Invoke from Client (JavaScript / TypeScript)
@@ -321,11 +340,11 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Core Network Engine
 
-> 📖 **For the complete technical manual with code examples, see: [docs/core.md](core.md)**.
+> 📖 **For the complete technical manual with code examples, see: [core.md](core.md)**.
 
 The network core resides in the `core/` directory and exposes the following building blocks:
 
-* **[core/session.py](../core/session.py)**:
+* **[core/session.py](core/session.py)**:
   * `JsonRpcSession`: Manages persistent client sockets.
   * Multiplexes incoming and outgoing RPC requests by numeric `id`.
   * Built-in **Rate-Limiter (Token Bucket)** for protection against flooding (30 req/s) with zero runtime overhead.
@@ -333,7 +352,7 @@ The network core resides in the `core/` directory and exposes the following buil
   * Session termination hooks: `session.register_on_close(callback)` for clean resource teardown.
   * Symmetric client invocation from server: `await session.send_request("client_method", params)`.
 
-* **[core/router.py](../core/router.py)**:
+* **[core/router.py](core/router.py)**:
   * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
   * High-throughput file streams, webhooks, and health checks.
 
@@ -342,15 +361,15 @@ The network core resides in the `core/` directory and exposes the following buil
   * Cuts 50–70% of network traffic by transmitting property schemas once and packing records into a 2D matrix.
   * Direct SQL tuple optimization bypasses dictionary allocations, minimizing Python GC overhead.
 
-* **[core/security.py](../core/security.py)**:
+* **[core/security.py](core/security.py)**:
   * Password hashing using **Argon2id**.
   * JWT access token issuance and validation.
   * Asymmetric RSA encryption for secure credential exchange.
 
-* **[core/lifecycle.py](../core/lifecycle.py)**:
+* **[core/lifecycle.py](core/lifecycle.py)**:
   * Application startup dispatcher `@on_startup` (runs migrations, cache warming, and background daemons before opening sockets).
 
-* **[core/lib/config.py](../core/lib/config.py)**:
+* **[core/lib/config.py](core/lib/config.py)**:
   * Settings parser for `settings.yaml` supporting environment variable overrides.
 
 ---
@@ -387,7 +406,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 3. Two-Phase File Upload Plugin (`plugins/files`)
-* Comprehensive architecture: see **[docs/files.md](files.md)**.
+* Comprehensive architecture: see **[files.md](files.md)**.
 * **Two-Phase Commit Workflow**:
   1. Client initiates upload transaction: server provisions isolated `/tmp/app_uploads/<folder_hash>/`.
   2. Client streams files via `POST /upload`. Bytes stream directly to disk without memory buffering.
@@ -399,7 +418,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 4. Smart Reactive Cache Plugin (`plugins/smart_cache`)
-* Comprehensive architecture: see **[docs/smart_cache.md](smart_cache.md)** and **[RFC 0001](rfc/0001-smart-cache.md)**.
+* Comprehensive architecture: see **[smart_cache.md](smart_cache.md)** and **[RFC 0001](rfc/0001-smart-cache.md)**.
 * **0 ms Latency Principle & Push Invalidation**:
   * Instant screen rendering from L1 RAM (or L2 IndexedDB/localStorage) with zero network wait.
   * Server automatically tracks mutations and pushes `cache.invalidate` impulses or targeted `cache.patch` via `@invalidates(tags=...)`.
@@ -409,21 +428,12 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 5. Modular Backend Test Framework (`tests/`)
-* Comprehensive guide: see **[docs/testing.md](testing.md)**.
+* Comprehensive guide: see **[testing.md](testing.md)**.
 * **Client-Perspective Black-Box Testing**:
   * Validates the backend exactly as a real frontend client interacts with it (over WebSocket WSRPC and HTTP).
   * `PersonaManager`: pre-authenticated sessions (`admin`, `user`, `guest`) with automatic local database seeding and RLS bypass.
   * Native verification of streaming (`stream: true`), push notification interception (`cache.invalidate`, `cache.patch`), and two-phase uploads.
   * Built-in stress & load testing (`tests/suites/test_load.py`): benchmarks RPS, latency percentiles (p50/p95/p99), and broadcast fan-out reliability.
-
----
-
-### 6. Deterministic Tabular Compression (`app/system/tabular.py`)
-* Comprehensive guide: see **[docs/tabular_compression.md](tabular_compression.md)** and **[RFC 0002](rfc/0002-packed-tabular-payloads.md)**.
-* **50–70% Bandwidth Savings & GC Relief**:
-  * Eliminates key duplication in collection responses by separating field schema from row values (`$tabular: true`).
-  * Seamless client-side unpacking in `wsrpc.ts` ensures zero friction for frontend UI components.
-  * Enables passing raw database cursor tuples directly to network serialization, bypassing Python dictionary allocation altogether.
 
 ---
 
@@ -516,7 +526,36 @@ rpc.registerMethod('ui.confirm', async (params) => {
 });
 ```
 
-> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](core.md#8-typescriptjavascript-client-clientwsrpcts)**.
+> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [core.md](core.md#8-typescriptjavascript-client-clientwsrpcts)**.
+
+---
+
+## 🌟 What's New in v0.3.3
+
+* 🚀 **Unified `RsgiWsrpcApp` Application Class**:
+  * Single-call Code-First initialization configuring secrets, database, CORS, and static file hosting.
+  * Native Zero-Copy static file serving via Rust Granian `proto.response_file`.
+  * Path traversal protection when serving files from `static_dir`.
+  * Automatic CORS preflight (`OPTIONS`) and `Access-Control-Allow-*` header handling.
+  * Integrated `app.run(host, port, workers)` for clean programmatic startups without shell scripts.
+* ⚡ **Kwargs Auto-Unpacking in `@rpc_method` / `@app.rpc`**:
+  * Handlers can define clean signatures with type hints and defaults: `async def fn(session, a: int, b: str = "default")`.
+  * JSON-RPC `params` dictionaries are mapped directly into keyword arguments.
+* 🛡 **Access Control & `public=True`**:
+  * Guest connections are restricted to `login.*` methods by default.
+  * Public endpoints for unauthenticated users are declared explicitly with `@rpc_method("name", public=True)`.
+* 🔒 **Enhanced Security & Cryptography**:
+  * Default PBKDF2 iterations increased from 100,000 to **600,000** following OWASP standards.
+  * Side-channel timing attack protection: password verification hardened using `hmac.compare_digest`.
+  * RSA key generation offloaded to threadpool with cache rotation to eliminate event-loop starvation.
+* 📦 **Streaming File Uploads (Granian RSGI)**:
+  * Chunked request body ingestion via `proto.read()` directly to disk ensuring constant $O(1)$ memory usage.
+  * Upload authorization verification via `/auth-check-upload` supporting `Authorization: Bearer <token>`.
+* 🌐 **Scalability Backplane**:
+  * Added `rsgi_wsrpc.core.backplane` module with `BaseBackplane` contract and `MemoryBackplane`.
+  * Multi-worker startup warning logged when `workers > 1` is configured with in-memory state.
+* 🤖 **AI-Native Guide `AGENTS.md`**:
+  * Included a dedicated LLM instruction file in the repository root to guarantee zero-hallucination agentic development.
 
 ---
 

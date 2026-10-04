@@ -23,7 +23,8 @@
    * [Модульный каркас тестирования (tests/)](#5-модульный-каркас-тестирования-tests)
 8. [Создание собственных плагинов и модулей в папке app](#-создание-собственных-плагинов-и-модулей-в-папке-app)
 9. [Клиентская библиотека (TypeScript/JavaScript)](#-клиентская-библиотека-typescriptjavascript)
-10. [Лицензия](#-лицензия)
+10. [🌟 Что нового в версии 0.3.3](#-что-нового-в-версии-033)
+11. [Лицензия](#-лицензия)
 
 ---
 
@@ -229,6 +230,9 @@ rsgi-wsrpc:   ███ (~350 токенов)  ──► ЭКОНОМИЯ ТОК
 * **Выше точность** — ИИ не теряет важные детали в огромном промпте.
 * **Ниже расходы** — прямая экономия бюджета на API LLM.
 
+#### 4. Встроенный AI-гайд (`AGENTS.md`)
+В корень репозитория включен специализированный файл [AGENTS.md](AGENTS.md) — готовая компактная инструкция для ИИ-ассистентов (Cursor, Antigravity, Claude Code, Windsurf, ChatGPT). В ней описаны актуальные архитектурные контракты, правила `@rpc_method`, авто-распаковка kwargs, табличное сжатие (RFC 0002) и анти-паттерны (защита от галлюцинаций). Файл обновляется с каждым релизом фреймворка.
+
 ---
 
 ## 🚀 Установка и быстрый старт
@@ -273,29 +277,44 @@ examples\showcase\run.bat
 
 ### 🛠 Вариант B: Минимальный сервер своими руками (`main.py`)
 ```python
-from core.session import rpc_method, JsonRpcSession
-from core.lifecycle import on_startup
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
 
-# Регистрируем RPC-метод
-@rpc_method("math.add")
-async def add_numbers(session: JsonRpcSession, params: dict):
-    a = params.get("a", 0)
-    b = params.get("b", 0)
+# 1. Единый Code-First класс приложения
+app = RsgiWsrpcApp(
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    static_dir="./public",     # Zero-Copy раздача статики через Rust RSGI
+    index_file="index.html",   # Автоматическая отдача на GET /
+    cors=True
+)
+
+# 2. Публичный RPC-метод с авто-распаковкой kwargs
+@app.rpc("math.add", public=True)
+async def add_numbers(a: int = 0, b: int = 0):
     return {"result": a + b}
 
-# Метод со стримингом прогресса (мультиретурн)
-@rpc_method("task.run_long")
-async def run_task(session: JsonRpcSession, params: dict):
-    rpc_id = params.get("rpc_id")
+# 3. Метод со стримингом прогресса (мультиретурн)
+@app.rpc("task.run_long")
+async def run_task(session, rpc_id: int = 0):
     for step in range(1, 4):
         # Отправляем промежуточный чанк прогресса в сокет
         await session.send_stream_chunk(rpc_id, {"progress": step * 33})
     return {"status": "completed"}
+
+# 4. Запуск сервера (или через CLI granian)
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8080, workers=1)
 ```
 
-### 2. Запуск сервера через Granian
+### 2. Запуск сервера
+Через Python:
 ```bash
-granian --interface rsgi --host 127.0.0.1 --port 8080 main:app
+python main.py
+```
+Или напрямую через CLI Granian (рекомендуется для продакшена):
+```bash
+granian --rsgi main:app --host 127.0.0.1 --port 8080 --workers 1
 ```
 
 ### 3. Вызов с клиента (JavaScript / TypeScript)
@@ -506,6 +525,35 @@ rpc.registerMethod('ui.confirm', async (params) => {
 ```
 
 > 📖 **Исчерпывающие примеры интеграции с UI-фреймворками (Svelte, React, Vue), обработки ошибок и отписок см. в [docs_ru/core.md](docs_ru/core.md#8-клиент-typescriptjavascript-clientwsrpcts)**.
+
+---
+
+## 🌟 Что нового в версии 0.3.3
+
+* 🚀 **Единый класс приложения `RsgiWsrpcApp`**:
+  * Code-First инициализация одной конструкцией: настройка секретов, БД, CORS и статики.
+  * Нативная Zero-Copy раздача статических файлов через Rust Granian `proto.response_file`.
+  * Защита от Path Traversal при отдаче файлов из `static_dir`.
+  * Автоматический CORS preflight (`OPTIONS`) и заголовки `Access-Control-Allow-*`.
+  * Встроенный метод `app.run(host, port, workers)` для удобного запуска без написания CLI команд.
+* ⚡ **Авто-распаковка именованных аргументов (kwargs) в `@rpc_method` / `@app.rpc`**:
+  * Поддерживаются сигнатуры с типами и значениями по умолчанию: `async def fn(session, a: int, b: str = "default")`.
+  * Параметры извлекаются автоматически из словаря `params` JSON-RPC 2.0.
+* 🛡 **Разграничение доступа `public=True`**:
+  * По умолчанию гостевым сессиям разрешены только методы `login.*`.
+  * Любой метод можно сделать доступным гостям через `@rpc_method("name", public=True)` или `@app.rpc("name", public=True)`.
+* 🔒 **Усиление безопасности и криптографии**:
+  * Дефолтное число итераций PBKDF2 увеличено с 100,000 до **600,000** согласно актуальным рекомендациям OWASP.
+  * Защита от Time-based Side-Channel атак: проверка паролей переведена на `hmac.compare_digest`.
+  * Генерация RSA-ключей для JWT вынесена в тредпул с ротационным кэшем для предотвращения DoS-блокировки event loop.
+* 📦 **Потоковая загрузка файлов RSGI (Granian Stream)**:
+  * Потоковое чтение чанков тела запроса через `proto.read()` напрямую на диск с гарантированным O(1) потреблением RAM.
+  * Эндпоинт `/auth-check-upload` валидирует JWT-токен в заголовке `Authorization: Bearer <token>`.
+* 🌐 **Шина масштабирования (Backplane)**:
+  * Добавлен модуль `rsgi_wsrpc.core.backplane` с абстрактным классом `BaseBackplane` и реализацией `MemoryBackplane`.
+  * Предупреждение в логах при запуске `workers > 1` на in-memory структурах.
+* 🤖 **AI-Native руководство `AGENTS.md`**:
+  * В корень репозитория добавлен специализированный гайд для ИИ-ассистентов с контрактами, правилами и защитой от галлюцинаций.
 
 ---
 

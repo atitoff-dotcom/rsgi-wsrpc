@@ -25,7 +25,7 @@ from rsgi_wsrpc.core.logger import logger
 
 from rsgi_wsrpc.plugins.db import async_session
 from .models import User, Role, RefreshToken, ActiveSession, OAuthAccount
-from .core import system_bypass_ctx, current_user_ctx
+from .core import system_bypass_ctx, current_user_ctx, AuthSession
 from .config import get_session_lifetime_days, get_max_active_sessions
 
 # Уведомления об изменении сессий
@@ -54,6 +54,7 @@ async def cleanup_app_session(session: JsonRpcSession) -> None:
 
 
 # Глобальное хранилище для эфемерных приватных ключей RSA
+MAX_EPHEMERAL_KEYS = 500
 ephemeral_keys: Dict[str, Dict[str, Any]] = {}
 
 def cleanup_expired_keys() -> None:
@@ -61,6 +62,12 @@ def cleanup_expired_keys() -> None:
     expired = [kid for kid, key_data in ephemeral_keys.items() if key_data["expires_at"] < now]
     for kid in expired:
         ephemeral_keys.pop(kid, None)
+    if len(ephemeral_keys) > MAX_EPHEMERAL_KEYS:
+        # Удаляем самые старые ключи при переполнении
+        sorted_keys = sorted(ephemeral_keys.items(), key=lambda item: item[1]["expires_at"])
+        to_remove = len(ephemeral_keys) - MAX_EPHEMERAL_KEYS
+        for kid, _ in sorted_keys[:to_remove]:
+            ephemeral_keys.pop(kid, None)
 
 def generate_token() -> str:
     return secrets.token_hex(32)
@@ -108,6 +115,96 @@ async def issue_refresh_token(db_session, user_id: int) -> RefreshToken:
     return rt_obj
 
 
+async def _create_authenticated_session(
+    db_session,
+    user: User,
+    session: JsonRpcSession,
+    user_agent: str,
+    rt_obj: Optional[RefreshToken] = None,
+    extra_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Единая точка выпуска сессии, токенов и привязки к WebSocket-соединению.
+    Дедуплицирует логику создания ActiveSession, JWT и AuthSession для всех провайдеров.
+    """
+    if rt_obj is None:
+        rt_obj = await issue_refresh_token(db_session, user.id)
+
+    client_ip = getattr(session, "ip", "0.0.0.0") or "0.0.0.0"
+    ws_session = ActiveSession(
+        user_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        refresh_token_id=rt_obj.id
+    )
+    db_session.add(ws_session)
+    await db_session.commit()
+    await db_session.refresh(ws_session)
+
+    # Гарантируем загрузку ролей и прав
+    stmt_user = select(User).options(
+        selectinload(User.roles).selectinload(Role.permissions),
+        selectinload(User.teams)
+    ).where(User.id == user.id)
+    user = (await db_session.execute(stmt_user)).scalar_one()
+
+    user_context = user.get_permissions()
+    user_roles = user.roles
+    role_name = user_roles[0].name if user_roles else "guest"
+    role_names = [r.name for r in user_roles] if user_roles else ["guest"]
+
+    jwt_token, _, _ = create_access_token(
+        user_id=user.id,
+        username=user.login,
+        roles=role_names,
+        user_agent=user_agent
+    )
+
+    from rsgi_wsrpc.core.session import current_transport_ctx
+    transport = current_transport_ctx.get()
+    current_user_ctx.set(user_context)
+
+    target = transport or session
+    session_data = AuthSession(
+        uid=user.id,
+        user=user,
+        user_name=user.login,
+        user_role=UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
+        user_roles=role_names,
+        session_db_id=ws_session.id,
+        user_ctx=user_context,
+        send_request_cb=getattr(target, "send_request", None),
+        send_stream_cb=getattr(target, "send_stream_chunk", None),
+        close_cb=getattr(target, "close", None)
+    )
+
+    if transport:
+        transport.data = session_data
+        transport.register_on_close(cleanup_app_session)
+    elif hasattr(session, "register_on_close"):
+        session.data = session_data
+        session.register_on_close(cleanup_app_session)
+
+    logger.info(f"[AUTH] Пользователь '{user.login}' успешно авторизован. ActiveSession #{ws_session.id}.")
+    asyncio.create_task(notify_session_change())
+
+    result = {
+        "token": rt_obj.token,
+        "jwt_token": jwt_token,
+        "user_id": user.id,
+        "username": user.login,
+        "name": user.name or user.login,
+        "email": user.email,
+        "role": role_name,
+        "roles": role_names,
+        "permissions": user_context.perms_dict if hasattr(user_context, "perms_dict") else (user_context or {}),
+        "is_superadmin": getattr(user, "is_superadmin", False),
+    }
+    if extra_data:
+        result.update(extra_data)
+    return result
+
+
 def _sync_http_request_json(
     url: str,
     method: str = "GET",
@@ -149,7 +246,7 @@ async def async_http_request_json(
 async def handle_get_key(session: JsonRpcSession, args: Dict[str, Any]) -> Dict[str, Any]:
     """Генерирует эфемерную пару ключей RSA для безопасной передачи пароля."""
     cleanup_expired_keys()
-    private_key_pem, public_key_pem = generate_rsa_keypair()
+    private_key_pem, public_key_pem = await asyncio.to_thread(generate_rsa_keypair)
     key_id = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
     ephemeral_keys[key_id] = {
@@ -187,70 +284,9 @@ async def handle_login(session: JsonRpcSession, args: Dict[str, Any]) -> Dict[st
                 logger.warning(f"[AUTH] Неудачная попытка входа для пользователя '{username}'.")
                 raise RPCError("Неверный логин или пароль")
 
-            rt_obj = await issue_refresh_token(db_session, user.id)
-
-            ws_session = ActiveSession(
-                user_id=user.id, 
-                ip_address=getattr(session, "ip", "0.0.0.0") or "0.0.0.0", 
-                user_agent=user_agent, 
-                refresh_token_id=rt_obj.id
-            )
-            db_session.add(ws_session)
-            await db_session.commit()
-            await db_session.refresh(ws_session)
-
-            user_context = user.get_permissions()
-            user_roles = user.roles
-            role_name = user_roles[0].name if user_roles else "guest"
-            role_names = [r.name for r in user_roles] if user_roles else ["guest"]
-
-            jwt_token, _, _ = create_access_token(
-                user_id=user.id,
-                username=user.login,
-                roles=role_names,
-                user_agent=user_agent
-            )
-
-            # Настраиваем контекст сессии
-            from rsgi_wsrpc.core.session import current_transport_ctx
-            transport = current_transport_ctx.get()
-            current_user_ctx.set(user_context)
-
-            # Регистрируем данные сессии
-            session_data = type("AppSession", (), {
-                "uid": user.id,
-                "user": user,
-                "user_name": user.login,
-                "user_role": UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                "user_roles": role_names,
-                "session_db_id": ws_session.id,
-                "user_ctx": user_context,
-            })()
-
-            if transport:
-                transport.data = session_data
-                transport.register_on_close(cleanup_app_session)
-            elif hasattr(session, "register_on_close"):
-                session.data = session_data
-                session.register_on_close(cleanup_app_session)
+            return await _create_authenticated_session(db_session, user, session, user_agent)
     finally:
         system_bypass_ctx.reset(token)
-
-    logger.info(f"[AUTH] Пользователь '{user.login}' успешно вошел в систему. ActiveSession #{ws_session.id}.")
-    asyncio.create_task(notify_session_change())
-
-    return {
-        "token": rt_obj.token,
-        "jwt_token": jwt_token,
-        "user_id": user.id,
-        "username": user.login,
-        "name": user.name or user.login,
-        "email": user.email,
-        "role": role_name,
-        "roles": role_names,
-        "permissions": user_context.perms_dict if hasattr(user_context, "perms_dict") else (user_context or {}),
-        "is_superadmin": getattr(user, "is_superadmin", False)
-    }
 
 
 @rpc_method("login.secure")
@@ -319,65 +355,9 @@ async def handle_refresh_token(session: JsonRpcSession, args: Dict[str, Any]) ->
             rt_obj.expires_at = now_utc + timedelta(days=lifetime_days)
             logger.info(f"[AUTH] Скользящее продление RefreshToken #{rt_obj.id} для '{rt_obj.user.login}' на {lifetime_days} дн. (до {rt_obj.expires_at.isoformat()}).")
 
-            ws_session = ActiveSession(
-                user_id=rt_obj.user.id, 
-                ip_address=getattr(session, "ip", "0.0.0.0") or "0.0.0.0", 
-                user_agent=user_agent, 
-                refresh_token_id=rt_obj.id
-            )
-            db_session.add(ws_session)
-            await db_session.commit()
-            await db_session.refresh(ws_session)
-
-            user_context = rt_obj.user.get_permissions()
-            user_roles = rt_obj.user.roles
-            role_name = user_roles[0].name if user_roles else "guest"
-            role_names = [role.name for role in user_roles]
-
-            jwt_token, _, _ = create_access_token(
-                user_id=rt_obj.user.id,
-                username=rt_obj.user.login,
-                roles=role_names,
-                user_agent=user_agent
-            )
-
-            from rsgi_wsrpc.core.session import current_transport_ctx
-            transport = current_transport_ctx.get()
-            current_user_ctx.set(user_context)
-
-            session_data = type("AppSession", (), {
-                "uid": rt_obj.user.id,
-                "user": rt_obj.user,
-                "user_name": rt_obj.user.login,
-                "user_role": UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                "user_roles": role_names,
-                "session_db_id": ws_session.id,
-                "user_ctx": user_context,
-            })()
-
-            if transport:
-                transport.data = session_data
-                transport.register_on_close(cleanup_app_session)
-            elif hasattr(session, "register_on_close"):
-                session.data = session_data
-                session.register_on_close(cleanup_app_session)
+            return await _create_authenticated_session(db_session, rt_obj.user, session, user_agent, rt_obj=rt_obj)
     finally:
         system_bypass_ctx.reset(token)
-
-    logger.info(f"[AUTH] Сессия пользователя '{rt_obj.user.login}' успешно продлена через RefreshToken. ActiveSession #{ws_session.id}.")
-    asyncio.create_task(notify_session_change())
-    return {
-        "token": token_str,
-        "jwt_token": jwt_token,
-        "user_id": rt_obj.user.id,
-        "username": rt_obj.user.login,
-        "name": rt_obj.user.name or rt_obj.user.login,
-        "email": rt_obj.user.email,
-        "role": role_name,
-        "roles": role_names,
-        "permissions": user_context.perms_dict if hasattr(user_context, "perms_dict") else (user_context or {}),
-        "is_superadmin": getattr(rt_obj.user, "is_superadmin", False)
-    }
 
 
 @rpc_method("login.whoami")
@@ -450,7 +430,7 @@ async def handle_get_oauth_providers(session: JsonRpcSession, args: Dict[str, An
     providers = []
     oauth_conf = {}
     try:
-        from app.config import settings
+        from rsgi_wsrpc.core.lib.config import settings
         oauth_conf = getattr(settings, "oauth", {}) or {}
     except Exception:
         pass
@@ -547,7 +527,7 @@ async def handle_oauth_vk(session: JsonRpcSession, args: Dict[str, Any]) -> Dict
 
     oauth_cfg = {}
     try:
-        from app.config import settings
+        from rsgi_wsrpc.core.lib.config import settings
         oauth_cfg = getattr(settings, "oauth", {}) or {}
     except Exception:
         pass
@@ -678,7 +658,9 @@ async def handle_oauth_vk(session: JsonRpcSession, args: Dict[str, Any]) -> Dict
                 logger.info(f"[AUTH VK] Найден существующий пользователь '{user.login}' (id={user.id}) по OAuth VK.")
             else:
                 user = None
-                if vk_email:
+                from rsgi_wsrpc.core.lib.config import settings
+                auto_link = settings.security.get("oauth_auto_link_email", True)
+                if vk_email and auto_link:
                     email_stmt = select(User).options(
                         selectinload(User.roles).selectinload(Role.permissions),
                         selectinload(User.teams)
@@ -732,89 +714,11 @@ async def handle_oauth_vk(session: JsonRpcSession, args: Dict[str, Any]) -> Dict
                     oauth_acc.user_id = user.id
                     oauth_acc.email = vk_email
 
-            rt_obj = await issue_refresh_token(db_session, user.id)
-
-            ws_session = ActiveSession(
-                user_id=user.id,
-                ip_address=getattr(session, "ip", "0.0.0.0") or "0.0.0.0",
-                user_agent=user_agent,
-                refresh_token_id=rt_obj.id
+            return await _create_authenticated_session(
+                db_session, user, session, user_agent, extra_data={"photo_url": photo_url}
             )
-            db_session.add(ws_session)
-            await db_session.commit()
-            await db_session.refresh(ws_session)
-
-            stmt_user = select(User).options(
-                selectinload(User.roles).selectinload(Role.permissions),
-                selectinload(User.teams)
-            ).where(User.id == user.id)
-            user = (await db_session.execute(stmt_user)).scalar_one()
-
-            user_context = user.get_permissions()
-            user_roles = user.roles
-            role_name = user_roles[0].name if user_roles else "user"
-            role_names = [r.name for r in user_roles] if user_roles else ["user"]
-
-            jwt_token, _, _ = create_access_token(
-                user_id=user.id,
-                username=user.login,
-                roles=role_names,
-                user_agent=user_agent
-            )
-
-            from rsgi_wsrpc.core.session import current_transport_ctx
-            transport = current_transport_ctx.get()
-            current_user_ctx.set(user_context)
-
-            try:
-                from app.session import Session as AppSession
-                session_data = AppSession(
-                    uid=user.id,
-                    user=user,
-                    user_name=user.login,
-                    user_role=UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                    user_roles=role_names,
-                    session_db_id=ws_session.id,
-                    user_ctx=user_context,
-                    send_request_cb=transport.send_request if transport else session.send_request,
-                    send_stream_cb=transport.send_stream_chunk if transport else session.send_stream_chunk,
-                    close_cb=transport.close if transport else session.close
-                )
-            except Exception:
-                session_data = type("AppSession", (), {
-                    "uid": user.id,
-                    "user": user,
-                    "user_name": user.login,
-                    "user_role": UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                    "user_roles": role_names,
-                    "session_db_id": ws_session.id,
-                    "user_ctx": user_context,
-                })()
-
-            if transport:
-                transport.data = session_data
-                transport.register_on_close(cleanup_app_session)
-            elif hasattr(session, "register_on_close"):
-                session.data = session_data
-                session.register_on_close(cleanup_app_session)
     finally:
         system_bypass_ctx.reset(bypass_token)
-
-    logger.info(f"[AUTH VK] Пользователь '{user.login}' (id={user.id}) успешно авторизован через VK ID. ActiveSession #{ws_session.id}.")
-    asyncio.create_task(notify_session_change())
-    return {
-        "token": rt_obj.token,
-        "jwt_token": jwt_token,
-        "user_id": user.id,
-        "username": user.login,
-        "name": user.name or user.login,
-        "email": user.email,
-        "role": role_name,
-        "roles": role_names,
-        "permissions": user_context.perms_dict if hasattr(user_context, "perms_dict") else (user_context or {}),
-        "is_superadmin": getattr(user, "is_superadmin", False),
-        "photo_url": photo_url
-    }
 
 
 @rpc_method("login.oauth_yandex")
@@ -830,7 +734,7 @@ async def handle_oauth_yandex(session: JsonRpcSession, args: Dict[str, Any]) -> 
 
     oauth_cfg = {}
     try:
-        from app.config import settings
+        from rsgi_wsrpc.core.lib.config import settings
         oauth_cfg = getattr(settings, "oauth", {}) or {}
     except Exception:
         pass
@@ -922,7 +826,9 @@ async def handle_oauth_yandex(session: JsonRpcSession, args: Dict[str, Any]) -> 
                 logger.info(f"[AUTH YANDEX] Найден существующий пользователь '{user.login}' (id={user.id}) по OAuth Yandex.")
             else:
                 user = None
-                if ya_email:
+                from rsgi_wsrpc.core.lib.config import settings
+                auto_link = settings.security.get("oauth_auto_link_email", True)
+                if ya_email and auto_link:
                     email_stmt = select(User).options(
                         selectinload(User.roles).selectinload(Role.permissions),
                         selectinload(User.teams)
@@ -975,87 +881,9 @@ async def handle_oauth_yandex(session: JsonRpcSession, args: Dict[str, Any]) -> 
                     oauth_acc.user_id = user.id
                     oauth_acc.email = ya_email
 
-            rt_obj = await issue_refresh_token(db_session, user.id)
-
-            ws_session = ActiveSession(
-                user_id=user.id,
-                ip_address=getattr(session, "ip", "0.0.0.0") or "0.0.0.0",
-                user_agent=user_agent,
-                refresh_token_id=rt_obj.id
+            return await _create_authenticated_session(
+                db_session, user, session, user_agent, extra_data={"photo_url": photo_url}
             )
-            db_session.add(ws_session)
-            await db_session.commit()
-            await db_session.refresh(ws_session)
-
-            stmt_user = select(User).options(
-                selectinload(User.roles).selectinload(Role.permissions),
-                selectinload(User.teams)
-            ).where(User.id == user.id)
-            user = (await db_session.execute(stmt_user)).scalar_one()
-
-            user_context = user.get_permissions()
-            user_roles = user.roles
-            role_name = user_roles[0].name if user_roles else "user"
-            role_names = [r.name for r in user_roles] if user_roles else ["user"]
-
-            jwt_token, _, _ = create_access_token(
-                user_id=user.id,
-                username=user.login,
-                roles=role_names,
-                user_agent=user_agent
-            )
-
-            from rsgi_wsrpc.core.session import current_transport_ctx
-            transport = current_transport_ctx.get()
-            current_user_ctx.set(user_context)
-
-            try:
-                from app.session import Session as AppSession
-                session_data = AppSession(
-                    uid=user.id,
-                    user=user,
-                    user_name=user.login,
-                    user_role=UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                    user_roles=role_names,
-                    session_db_id=ws_session.id,
-                    user_ctx=user_context,
-                    send_request_cb=transport.send_request if transport else session.send_request,
-                    send_stream_cb=transport.send_stream_chunk if transport else session.send_stream_chunk,
-                    close_cb=transport.close if transport else session.close
-                )
-            except Exception:
-                session_data = type("AppSession", (), {
-                    "uid": user.id,
-                    "user": user,
-                    "user_name": user.login,
-                    "user_role": UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
-                    "user_roles": role_names,
-                    "session_db_id": ws_session.id,
-                    "user_ctx": user_context,
-                })()
-
-            if transport:
-                transport.data = session_data
-                transport.register_on_close(cleanup_app_session)
-            elif hasattr(session, "register_on_close"):
-                session.data = session_data
-                session.register_on_close(cleanup_app_session)
     finally:
         system_bypass_ctx.reset(bypass_token)
-
-    logger.info(f"[AUTH YANDEX] Пользователь '{user.login}' (id={user.id}) успешно авторизован через Яндекс ID. ActiveSession #{ws_session.id}.")
-    asyncio.create_task(notify_session_change())
-    return {
-        "token": rt_obj.token,
-        "jwt_token": jwt_token,
-        "user_id": user.id,
-        "username": user.login,
-        "name": user.name or user.login,
-        "email": user.email,
-        "role": role_name,
-        "roles": role_names,
-        "permissions": user_context.perms_dict if hasattr(user_context, "perms_dict") else (user_context or {}),
-        "is_superadmin": getattr(user, "is_superadmin", False),
-        "photo_url": photo_url
-    }
 

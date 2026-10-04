@@ -56,6 +56,10 @@ def test_tabular_payload_savings():
     assert savings > 35.0, f"Ожидалась экономия более 35%, получено {savings:.1f}%"
 
 
+import pytest
+
+
+@pytest.mark.e2e
 async def test_wsrpc_raw_and_transparent_tabular():
     """
     Проверяет WSRPC-протокол:
@@ -79,6 +83,7 @@ async def test_wsrpc_raw_and_transparent_tabular():
         assert "title" in first or "name" in first
 
 
+@pytest.mark.e2e
 async def test_wsrpc_topics_tabular():
     """Проверяет получение топиков форума в табличном сжатом формате."""
     async with await PersonaManager.as_guest() as client:

@@ -5,6 +5,10 @@
 """
 
 import asyncio
+import pytest
+
+pytestmark = pytest.mark.e2e
+
 from tests.framework import (
     PersonaManager,
     TestClient,

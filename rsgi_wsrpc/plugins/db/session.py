@@ -15,15 +15,8 @@ from sqlalchemy.orm import DeclarativeBase
 class Base(DeclarativeBase):
     pass
 
-# Определение URL подключения: env переменная или настройки приложения
+# Определение URL подключения: env переменная или настройки ядра rsgi-wsrpc
 _db_url = os.environ.get("DATABASE_URL")
-if not _db_url:
-    try:
-        from app.config import settings as app_settings
-        _db_url = getattr(app_settings, "database_url", None)
-    except Exception:
-        pass
-
 if not _db_url:
     try:
         from rsgi_wsrpc.core.lib.config import settings as core_settings

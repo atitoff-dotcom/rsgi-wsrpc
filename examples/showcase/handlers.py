@@ -40,14 +40,8 @@ async def broadcast_tasks_updated():
 
     for s in list(ACTIVE_SESSIONS_SET):
         try:
-            if not getattr(s, "_closed", True) and getattr(s, "ws", None):
-                awaitable = s.ws.send_str(payload)
-                if not hasattr(awaitable, "cancelled"):
-                    try:
-                        awaitable.cancelled = lambda: False
-                    except AttributeError:
-                        pass
-                await awaitable
+            if hasattr(s, "send_str"):
+                await s.send_str(payload)
         except Exception:
             pass
 

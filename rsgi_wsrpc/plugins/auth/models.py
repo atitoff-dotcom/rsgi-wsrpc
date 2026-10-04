@@ -4,7 +4,8 @@ ORM-модели пользователей, ролей, сессий и ток�
 """
 
 from typing import List, Optional
-import hashlib  
+import hashlib
+import hmac
 import os
 import base64
 from datetime import datetime, timezone
@@ -268,7 +269,7 @@ class User(RowSecureModel):
                 user_hash = self._hash_password(password, salt, iterations)
                 algorithm, iterations_str, salt_b64, key_b64 = user_hash.split("$")
                 user_hash = base64.b64decode(key_b64)
-                return db_hash == user_hash
+                return hmac.compare_digest(db_hash, user_hash)
             except Exception:
                 return False
         else:

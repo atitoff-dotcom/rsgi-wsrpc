@@ -74,11 +74,11 @@ def _build_default_settings() -> dict:
     except ValueError:
         session_idle_timeout = 900
 
-    pwd_iter_raw = os.getenv("PASSWORD_ITERATIONS", "10000")
+    pwd_iter_raw = os.getenv("PASSWORD_ITERATIONS", "600000")
     try:
         password_iterations = int(pwd_iter_raw)
     except ValueError:
-        password_iterations = 10000
+        password_iterations = 600000
 
     token_expire_raw = os.getenv("TOKEN_EXPIRE_HOURS", "24")
     try:
@@ -92,7 +92,7 @@ def _build_default_settings() -> dict:
             "session_idle_timeout": session_idle_timeout,
             "password_iterations": password_iterations,
             "token_expire_hours": token_expire_hours,
-            "login_rpc": os.getenv("LOGIN_RPC", ""),
+            "login_rpc": os.getenv("LOGIN_RPC", "login."),
         },
         "database_url": os.getenv("DATABASE_URL", "sqlite:///./data/app.db"),
         "files_path": os.getenv("FILES_PATH", "./files"),

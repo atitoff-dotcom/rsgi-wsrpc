@@ -21,17 +21,20 @@ if SHOWCASE_DIR not in sys.path:
     sys.path.insert(0, SHOWCASE_DIR)
 
 # Импорты ядра rsgi-wsrpc
-from core.session import JsonRpcSession, rpc_method
-from core.router import http_route, HTTP_ROUTES
+from rsgi_wsrpc import RsgiWsrpcApp
 from core.logger import setup_logging, logger
-from core.lifecycle import on_startup, run_startup_callbacks
 
-from core.lib.config import configure
+# Путь к директории статики
+PUBLIC_DIR = os.path.join(SHOWCASE_DIR, "public")
 
-# Code-First конфигурация Showcase (без YAML-файлов)
-configure(
+# Создание приложения Showcase на базе RsgiWsrpcApp
+app = RsgiWsrpcApp(
     secret_key=os.getenv("SECRET_KEY", "showcase-demo-secret-key-12345"),
-    database_url=os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{os.path.join(SHOWCASE_DIR, 'showcase.db')}")
+    database_url=os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{os.path.join(SHOWCASE_DIR, 'showcase.db')}"),
+    login_rpc="",  # Открытый доступ для демонстрационного стенда
+    static_dir=PUBLIC_DIR,
+    index_file="index.html",
+    cors=True
 )
 
 # Импорты плагина БД и моделей showcase
@@ -42,14 +45,8 @@ import handlers  # Регистрация RPC-методов showcase
 # Инициализация логирования
 setup_logging()
 
-# Сессионный счетчик сокетов
-GLOBAL_SESSION_COUNTER = count()
 
-# Путь к директории статики
-PUBLIC_DIR = os.path.join(SHOWCASE_DIR, "public")
-
-
-@on_startup
+@app.on_startup
 async def init_database():
     """Асинхронно создает таблицы БД (SQLite) при старте сервера."""
     try:
@@ -60,30 +57,7 @@ async def init_database():
         logger.error(f"[Showcase] Ошибка инициализации базы данных: {e}", exc_info=True)
 
 
-@http_route("/", ["GET"])
-async def index_handler(scope, proto):
-    """Отдает интерфейс демонстрационной панели управления."""
-    index_file = os.path.join(PUBLIC_DIR, "index.html")
-    if os.path.exists(index_file):
-        with open(index_file, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        proto.response_str(
-            status=200,
-            headers=[
-                ("content-type", "text/html; charset=utf-8"),
-                ("cache-control", "no-cache")
-            ],
-            body=html_content
-        )
-    else:
-        proto.response_str(
-            status=404,
-            headers=[("content-type", "text/plain; charset=utf-8")],
-            body="index.html not found"
-        )
-
-
-@http_route("/health", ["GET"])
+@app.route("/health", ["GET"])
 async def health_handler(scope, proto):
     """Healthcheck endpoint."""
     proto.response_str(
@@ -91,63 +65,6 @@ async def health_handler(scope, proto):
         headers=[("content-type", "application/json")],
         body='{"status":"ok","framework":"rsgi-wsrpc","showcase":"ready"}'
     )
-
-
-def __rsgi_init__(loop):
-    """Вызывается Granian при старте рабочего процесса."""
-    try:
-        loop.run_until_complete(run_startup_callbacks())
-    except Exception as e:
-        logger.critical(f"[Showcase] Сбой при инициализации: {e}", exc_info=True)
-        sys.exit(1)
-
-
-async def app(scope, proto):
-    """
-    Главный асинхронный RSGI-обработчик запросов Granian.
-    Разделяет входящие потоки на HTTP и WebSocket (WSRPC).
-    """
-    # 1. Обработка HTTP-запросов
-    if scope.proto == "http":
-        if scope.method == "OPTIONS":
-            proto.response_str(
-                status=204,
-                headers=[
-                    ("access-control-allow-origin", "*"),
-                    ("access-control-allow-methods", "GET, POST, OPTIONS"),
-                    ("access-control-allow-headers", "content-type"),
-                ],
-                body=""
-            )
-            return
-
-        for route_path, methods, handler in HTTP_ROUTES:
-            if scope.path == route_path and scope.method in methods:
-                await handler(scope, proto)
-                return
-
-        proto.response_str(
-            status=404,
-            headers=[("content-type", "text/plain; charset=utf-8")],
-            body="404 Not Found"
-        )
-        return
-
-    # 2. Обработка WSRPC WebSocket-соединений
-    if scope.proto == "websocket":
-        try:
-            ws = await proto.accept()
-            session_id = next(GLOBAL_SESSION_COUNTER)
-            session = JsonRpcSession(ws, session_id)
-            await session.start()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"[Showcase WS] Ошибка сокет-сессии: {e}", exc_info=True)
-        return
-
-
-app.__rsgi_init__ = __rsgi_init__
 
 
 if __name__ == "__main__":

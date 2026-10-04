@@ -18,7 +18,11 @@ async def _safe_send(session, payload_str: str) -> bool:
     Изолирует ошибки сетевого уровня конкретного клиента.
     """
     try:
-        if getattr(session, "_closed", True) or not getattr(session, "ws", None):
+        if getattr(session, "_closed", True):
+            return False
+        if hasattr(session, "send_str"):
+            return await session.send_str(payload_str)
+        if not getattr(session, "ws", None):
             return False
         awaitable = session.ws.send_str(payload_str)
         if not hasattr(awaitable, "cancelled"):

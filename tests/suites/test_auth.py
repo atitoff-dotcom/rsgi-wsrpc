@@ -3,6 +3,10 @@
 Тест-сьют: Аутентификация и проверка ролей (Auth Suite).
 """
 
+import pytest
+
+pytestmark = pytest.mark.e2e
+
 from tests.framework import (
     PersonaManager,
     TestClient,

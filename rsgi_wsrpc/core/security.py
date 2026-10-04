@@ -28,8 +28,6 @@ def get_secret_key() -> str:
             get_secret_key._warned = True
     return key
 
-SECRET_KEY = get_secret_key()
-
 
 def create_access_token(user_id: int, username: str, roles: list[str], user_agent: str) -> tuple[str, str, datetime]:
     """
@@ -37,7 +35,11 @@ def create_access_token(user_id: int, username: str, roles: list[str], user_agen
     """
     jti = str(uuid.uuid4())
     now_utc = datetime.now(timezone.utc)
-    expires_at = now_utc + timedelta(days=7)
+    try:
+        expire_hours = int(settings.security.token_expire_hours)
+    except Exception:
+        expire_hours = 24 * 7
+    expires_at = now_utc + timedelta(hours=expire_hours)
 
     # Создаем цифровой отпечаток браузера (хэш от User-Agent)
     ua_fingerprint = hashlib.sha256(user_agent.encode('utf-8', errors='ignore')).hexdigest()
@@ -60,14 +62,11 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
 
 
-import os
-import base64
-
-PASSWORD_ITERATIONS = 600000
-try:
-    PASSWORD_ITERATIONS = int(settings.security.password_iterations)
-except AttributeError:
-    pass
+def get_password_iterations() -> int:
+    try:
+        return int(settings.security.password_iterations)
+    except Exception:
+        return 600000
 
 
 def hash_password(password: str) -> str:
@@ -75,7 +74,7 @@ def hash_password(password: str) -> str:
     Хэширует пароль с помощью PBKDF2-SHA256 с солью и количеством итераций из настроек.
     """
     salt = os.urandom(16)
-    iterations = PASSWORD_ITERATIONS
+    iterations = get_password_iterations()
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations)
     return f"pbkdf2_sha256${iterations}${base64.b64encode(salt).decode('utf-8')}${base64.b64encode(key).decode('utf-8')}"
 
