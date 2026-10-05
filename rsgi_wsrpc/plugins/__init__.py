@@ -10,6 +10,7 @@ from . import smart_cache
 from . import raw_ws
 from . import files
 from . import seo
+from . import crud
 
 __all__ = [
     "db",
@@ -19,5 +20,7 @@ __all__ = [
     "raw_ws",
     "files",
     "seo",
+    "crud",
 ]
+
 

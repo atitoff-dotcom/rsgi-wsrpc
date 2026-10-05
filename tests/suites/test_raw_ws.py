@@ -14,7 +14,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from plugins.raw_ws import (
+from rsgi_wsrpc.plugins.raw_ws import (
     generate_session_id,
     raw_ws_route,
     dispatch_raw_ws,

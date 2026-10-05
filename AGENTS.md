@@ -145,7 +145,33 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
 
 ---
 
-## 8. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
+## 8. Универсальный реактивный CRUD (`rsgi_wsrpc.plugins.crud`)
+
+Управление моделями базы данных, авто-генерация API и встроенный веб-интерфейс:
+1. Авто-сканирование моделей:
+   ```python
+   import rsgi_wsrpc.plugins.crud as crud
+   crud.ModelRegistry.auto_discover(Base)
+   ```
+2. Декларативное описание модели (`class Crud:`):
+   ```python
+   class Item(Base):
+       __tablename__ = "items"
+       id: Mapped[int] = mapped_column(Integer, primary_key=True)
+       title: Mapped[str] = mapped_column(String(100), info={"label": "Название"})
+       class Crud:
+           verbose_name = "Элемент"
+           verbose_name_plural = "Элементы"
+           hidden = {"secret_col"}
+           readonly = {"created_at"}
+           protected = {"owner_id"}
+   ```
+3. Контракт методов WSRPC: `crud.schema`, `crud.list` ($tabular), `crud.get`, `crud.create`, `crud.update_cell`, `crud.bulk_update`, `crud.delete`.
+4. Веб-интерфейс доступен из коробки на `/crud` и `/admin`.
+
+---
+
+## 9. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
 
 1. ❌ **НЕ ИМПОРТИРУЙТЕ `fastapi`, `starlette` или ASGI-модули.**
    - Сервер работает на **Granian RSGI**, где `scope.proto` — `"http"` или `"websocket"`.

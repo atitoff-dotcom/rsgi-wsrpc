@@ -63,6 +63,10 @@ The architecture enforces a strict unidirectional dependency hierarchy (Clean Ar
 │   Async SQLAlchemy 2.0  Users, JWT,            2PC file streaming,      │
 │   SQLite / PostgreSQL   roles and permissions  registry & Nginx offload │
 │                                                                         │
+│   [ Plugin: CRUD ]      [ Plugin: SEO ]        [ Plugin: Smart Cache ]  │
+│   Reactive CRUD, RLS,   Dynamic Rendering,     Reactive event-driven    │
+│   Svelte 5 SPA Admin    Search engine crawlers feedback cache (0 ms)    │
+│                                                                         │
 │   [ Domain Plugins: Forum, Billing, Notifications, Analytics... ]       │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ registers into

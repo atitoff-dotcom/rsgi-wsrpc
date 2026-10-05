@@ -165,23 +165,40 @@ A fully functional showcase demonstrating `plugins.db` and the `plugins.auth` ro
 
 ---
 
-## 7. Official Plugin Roadmap & RFC Registry
+## 8. Universal Reactive CRUD (`plugins.crud`)
+
+Official plug-and-play reactive CRUD and entity administration plugin based on SQLAlchemy 2.0.
+
+### Features
+- **Declarative Model Configuration (`class Crud:`)**: Manage verbose names, `hidden` fields, `readonly` timestamps/audit columns, and `protected` fields.
+- **Unconditional Secret Redaction**: Auto-hides columns matching `*password*`, `*_hash`, `*secret*`, `*token*`.
+- **Capability-Based Access Control**: Completely decoupled from hardcoded roles. Enforces atomic capabilities: `{model}:read`, `{model}:create`, `{model}:update`, `{model}:delete`, `{model}:transfer`.
+- **Zero-Coupling Authorization (`IdentityProvider`)**: Seamlessly binds any project authorization/team model via a simple protocol.
+- **Tabular Data Compression (RFC 0002)**: List endpoints stream matrix-packed rows saving 40-70% bandwidth.
+- **Built-in Standalone UI (Svelte 5 Runes)**: Turnkey modern SPA served over RSGI Zero-Copy (`/crud` and `/admin`).
+
+Comprehensive guide: [CRUD Plugin Documentation](crud.md).
+
+---
+
+## 9. Official Plugin Roadmap & RFC Registry
 
 The following table tracks official framework plugins and their standardized architectural specifications:
 
-| Plugin Name | Status | RFC Specification | Description |
+| Plugin Name | Status | RFC Specification / Documentation | Description |
 | :--- | :--- | :--- | :--- |
 | **`plugins.db`** | ✅ Stable | Core Framework | Asynchronous SQLAlchemy 2.0 connection pool & declarative Base |
 | **`plugins.auth`** | ✅ Stable | Core Framework | RBAC, RLS (`RowSecureModel`), OAuth2, sliding session lifecycle |
+| **`plugins.crud`** | ✅ Stable | [Documentation](crud.md) / [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Universal reactive CRUD, model introspection, RLS & standalone UI |
 | **`plugins.raw_ws`** | ✅ Stable | Core Framework | Raw & binary bidirectional WebSocket sessions with 64-bit IDs |
 | **`plugins.smart_cache`**| ⚡ In Progress | [RFC 0001](rfc/0001-smart-cache.md) | Event-driven feedback cache with 0 ms perceived latency |
-| **`plugins.admin`** | 📝 In Review | [RFC 0003](rfc/0003-reactive-admin-plugin.md) | Reactive enterprise administration & CRUD engine |
 | **`plugins.files`** | ✅ Stable | [RFC 0005](rfc/0005-file-storage-and-upload-subsystem.md) | Two-phase commit (2PC) streaming uploads & Nginx offload |
 | **`plugins.seo`**   | ✅ Stable | [RFC 0011](rfc/0011-dynamic-rendering-seo.md) | Dynamic Rendering, sitemap.xml, OpenGraph, JSON-LD, IndexNow |
 | **`plugins.broadcast`** | 📝 In Review | [RFC 0006](rfc/0006-websocket-broadcast-and-event-bus.md) | High-throughput zero-copy WebSocket push & targeting |
-| **`plugins.gateway`** | 📝 In Review | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API gateway for WSRPC & auto-generated Swagger UI |
+| **`plugins.gateway`** | 📝 На рассмотрении | [RFC 0007](rfc/0007-http-api-gateway-and-documentation.md) | HTTP API gateway for WSRPC & auto-generated Swagger UI |
 | **`plugins.discussions`**| 📝 In Review | [RFC 0008](rfc/0008-threaded-discussions-and-forum.md) | Hierarchical forum, nested threads & emoji reactions |
 | **`plugins.messages`** | 📝 In Review | [RFC 0009](rfc/0009-direct-messaging-and-chat.md) | 1-on-1 direct messaging, chat & polymorphic context |
 | **`plugins.articles`** | 📝 In Review | [RFC 0010](rfc/0010-knowledge-base-and-articles-cms.md) | Markdown knowledge base, FAQ & article CMS |
+
 
 
