@@ -1,6 +1,4 @@
-granian>=1.6.0
-orjson>=3.9.0
-pyjwt>=2.8.0
-cryptography>=42.0.0
-sqlalchemy>=2.0.0
+rsgi-wsrpc>=0.4.0
+greenlet>=3.0.0
+sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.19.0

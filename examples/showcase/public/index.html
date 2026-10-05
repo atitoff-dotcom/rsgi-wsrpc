@@ -1,727 +1,1937 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>rsgi-wsrpc Showcase: Реактивный Python Фреймворк</title>
+  <title>rsgi-wsrpc — Interactive Showcase & Living Documentation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
+    /* ==========================================================================
+       1. DESIGN SYSTEM: CLEAN LIGHT THEME (HIGH CONTRAST & FUNCTIONAL)
+       ========================================================================== */
     :root {
-      --bg-dark: #0b0f19;
-      --card-bg: rgba(22, 30, 49, 0.75);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --accent-cyan: #06b6d4;
-      --accent-blue: #3b82f6;
-      --accent-purple: #8b5cf6;
-      --accent-emerald: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --radius: 12px;
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-subtle: #f1f5f9;
+      --bg-active: #e2e8f0;
+      
+      --border-color: #e2e8f0;
+      --border-focus: #3b82f6;
+      --border-strong: #cbd5e1;
+
+      --text-main: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+
+      --success: #059669;
+      --success-light: #ecfdf5;
+      --success-border: #a7f3d0;
+
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --danger-border: #fecaca;
+
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+
+      --purple: #7c3aed;
+      --purple-light: #f5f3ff;
+
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', "SFMono-Regular", Consolas, Menlo, monospace;
+
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 8px;
+
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: radial-gradient(circle at 50% 0%, #172554 0%, #0b0f19 75%);
+      background-color: var(--bg-page);
       color: var(--text-main);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      min-height: 100vh;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ==========================================================================
+       2. LAYOUT: TOPBAR & MAIN GRID WITH SIDEBAR
+       ========================================================================== */
+    .topbar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .topbar-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 10px 24px;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      padding: 24px 16px;
-    }
-
-    .container {
-      max-width: 1100px;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* HEADER */
-    header {
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius);
-      padding: 20px 24px;
-      display: flex;
-      flex-wrap: wrap;
       justify-content: space-between;
-      align-items: center;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
-    .logo-block h1 {
-      font-size: 1.5rem;
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .logo-block p {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      background: rgba(0, 0, 0, 0.3);
-      padding: 8px 16px;
-      border-radius: 9999px;
-      border: 1px solid var(--card-border);
-    }
-
-    .status-badge {
+      color: var(--text-main);
+      letter-spacing: -0.02em;
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 0.85rem;
+    }
+
+    .brand-badge {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .status-cluster {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
       font-weight: 500;
     }
 
-    .pulse-dot {
-      width: 10px;
-      height: 10px;
+    .indicator-dot {
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: #ef4444;
-      transition: background 0.3s ease;
+      background: var(--danger);
+      transition: background 0.2s;
     }
-    .pulse-dot.online {
-      background: var(--accent-emerald);
-      box-shadow: 0 0 10px var(--accent-emerald);
-    }
-
-    .metric-item {
-      font-size: 0.85rem;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--accent-cyan);
+    .indicator-dot.online {
+      background: var(--success);
+      box-shadow: 0 0 0 2px var(--success-border);
     }
 
-    /* GRID */
-    .grid-2 {
+    .metric-mono {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .app-layout {
+      max-width: 1400px;
+      margin: 0 auto;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      grid-template-columns: 280px minmax(0, 1fr);
       gap: 24px;
-    }
-    @media (max-width: 640px) {
-      .grid-2 { grid-template-columns: 1fr; }
+      padding: 24px;
     }
 
-    .card {
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius);
+    @media (max-width: 960px) {
+      .app-layout {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+      .sidebar {
+        display: none;
+      }
+    }
+
+    /* ==========================================================================
+       3. SIDEBAR NAVIGATION
+       ========================================================================== */
+    .sidebar {
+      position: sticky;
+      top: 72px;
+      height: calc(100vh - 96px);
+      overflow-y: auto;
+      padding-right: 8px;
+    }
+
+    .nav-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin: 16px 0 8px 12px;
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: var(--radius-md);
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+    }
+
+    .nav-link:hover {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .nav-link.active {
+      background: var(--primary-light);
+      color: var(--primary);
+      border-color: #bfdbfe;
+      font-weight: 600;
+    }
+
+    .nav-icon {
+      font-size: 14px;
+      width: 18px;
+      text-align: center;
+    }
+
+    /* ==========================================================================
+       4. FEATURE CARDS
+       ========================================================================== */
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      scroll-margin-top: 80px;
+    }
+
+    .feature-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      background: #fafafa;
+    }
+
+    .feature-title-block h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .feature-title-block p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .feature-body {
       padding: 24px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      gap: 20px;
     }
 
-    .card-header {
+    .split-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 1100px) {
+      .split-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .sandbox-panel {
       display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 12px;
+      flex-direction: column;
+      gap: 16px;
     }
 
-    .card-header h2 {
-      font-size: 1.15rem;
-      font-weight: 600;
+    /* ==========================================================================
+       5. CODE INSPECTOR TABS
+       ========================================================================== */
+    .code-inspector {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .code-tabs {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+      background: #e2e8f0;
+      padding: 0 8px;
     }
 
-    .tag {
-      font-size: 0.75rem;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+    .tab-buttons {
+      display: flex;
+      gap: 4px;
     }
 
-    /* CONTROLS & BUTTONS */
-    .btn {
-      background: linear-gradient(135deg, #2563eb, #1d4ed8);
-      color: #fff;
+    .code-tab-btn {
+      background: transparent;
       border: none;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: 500;
-      font-size: 0.9rem;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
       cursor: pointer;
-      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .code-tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .code-tab-btn.active {
+      color: var(--primary);
+      background: var(--bg-card);
+      border-bottom-color: var(--primary);
+    }
+
+    .btn-copy {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-copy:hover {
+      background: #fff;
+      color: var(--text-main);
+      border-color: var(--text-secondary);
+    }
+
+    .code-view {
+      padding: 14px;
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      background: #ffffff;
+      color: #1e293b;
+      overflow-x: auto;
+      max-height: 280px;
+    }
+
+    .kw { color: #0969da; font-weight: 600; }
+    .str { color: #0a3069; }
+    .dec { color: #953800; font-weight: 600; }
+    .cmt { color: #6e7781; font-style: italic; }
+    .fn { color: #8250df; }
+    .prop { color: #116329; }
+
+    /* ==========================================================================
+       6. UI CONTROLS & TABLES
+       ========================================================================== */
+    .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      padding: 8px 14px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      text-decoration: none;
     }
-    .btn:hover {
-      background: linear-gradient(135deg, #3b82f6, #2563eb);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
     }
-    .btn:active { transform: translateY(0); }
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid var(--card-border);
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-default {
+      background: var(--bg-card);
+      border-color: var(--border-strong);
       color: var(--text-main);
     }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.14);
-      box-shadow: none;
+    .btn-default:hover {
+      background: var(--bg-subtle);
+      border-color: #94a3b8;
     }
-    .btn-danger {
-      background: rgba(244, 63, 94, 0.15);
-      color: #fda4af;
-      border: 1px solid rgba(244, 63, 94, 0.3);
+
+    .btn-sm {
       padding: 4px 8px;
-      font-size: 0.8rem;
-    }
-    .btn-danger:hover {
-      background: rgba(244, 63, 94, 0.3);
-      box-shadow: none;
+      font-size: 12px;
     }
 
-    input, select {
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid var(--card-border);
-      color: #fff;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 0.9rem;
+    .btn-danger-outline {
+      background: transparent;
+      border-color: var(--danger-border);
+      color: var(--danger);
+    }
+    .btn-danger-outline:hover {
+      background: var(--danger-light);
+    }
+
+    input[type="text"], select {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      padding: 8px 12px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      color: var(--text-main);
       outline: none;
-      transition: border 0.2s;
+      transition: border 0.15s;
     }
-    input:focus, select:focus {
-      border-color: var(--accent-cyan);
-    }
-
-    /* TABULAR COMPRESSION STATS */
-    .compression-meter {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 14px;
-      display: flex;
-      justify-content: space-around;
-      text-align: center;
-    }
-    .meter-val {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: var(--accent-emerald);
-      margin-top: 4px;
-    }
-    .meter-lbl {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    input[type="text"]:focus, select:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px #dbeafe;
     }
 
-    /* TASK LIST */
-    .task-form {
-      display: flex;
-      gap: 10px;
-    }
-    .task-form input { flex: 1; }
-
-    .task-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 240px;
-      overflow-y: auto;
-      padding-right: 4px;
-    }
-    .task-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .info-callout {
+      background: var(--bg-subtle);
+      border-left: 3px solid var(--primary);
       padding: 10px 14px;
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      transition: background 0.2s;
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      line-height: 1.5;
     }
-    .task-item:hover { background: rgba(0, 0, 0, 0.4); }
-    .task-item.done .task-title {
-      text-decoration: line-through;
-      color: var(--text-muted);
-    }
-    .task-info {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex: 1;
-    }
-    .task-title {
-      font-size: 0.92rem;
-    }
-    .priority-badge {
-      font-size: 0.7rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      font-weight: 600;
-    }
-    .priority-high { background: rgba(244, 63, 94, 0.2); color: #fda4af; }
-    .priority-normal { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
-    .priority-low { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
 
-    /* PROGRESS BAR FOR STREAM */
-    .progress-track {
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid var(--card-border);
+    .data-table-wrapper {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg-card);
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .data-table th {
+      background: var(--bg-subtle);
+      padding: 8px 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 12px;
+    }
+
+    .data-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background: #fafafa;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-high { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
+    .badge-normal { background: var(--primary-light); color: var(--primary); border: 1px solid #bfdbfe; }
+    .badge-low { background: var(--success-light); color: var(--success); border: 1px solid var(--success-border); }
+
+    .progress-bar-container {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
       border-radius: 9999px;
       height: 12px;
       overflow: hidden;
-      margin: 8px 0;
     }
-    .progress-fill {
-      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+    .progress-bar-val {
+      background: var(--primary);
       height: 100%;
       width: 0%;
       transition: width 0.3s ease;
     }
 
-    /* CODE & LOGS */
-    pre, .log-box {
-      background: rgba(0, 0, 0, 0.45);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
+    .metric-comparison-box {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
       padding: 12px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
-      color: #a5f3fc;
-      overflow-x: auto;
-      max-height: 160px;
+      text-align: center;
     }
 
-    /* FOOTER */
-    footer {
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      margin-top: 12px;
+    .comp-val {
+      font-family: var(--font-mono);
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-top: 4px;
     }
-    footer a { color: var(--accent-cyan); text-decoration: none; }
+
+    .comp-lbl {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .event-log-container {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      max-height: 140px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .event-item {
+      display: flex;
+      gap: 8px;
+      color: var(--text-secondary);
+    }
+    .event-time { color: var(--text-muted); flex-shrink: 0; }
+    .event-msg { color: var(--text-main); word-break: break-all; }
+    .event-msg.highlight { color: var(--primary); font-weight: 600; }
+    .event-msg.success { color: var(--success); font-weight: 600; }
+    .event-msg.alert { color: var(--danger); font-weight: 600; }
+
+    .dropzone {
+      border: 2px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      text-align: center;
+      background: var(--bg-subtle);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .dropzone:hover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    footer {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-card);
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 40px;
+    }
   </style>
 </head>
 <body>
 
-<div class="container">
-  <!-- HEADER -->
-  <header>
-    <div class="logo-block">
-      <h1>⚡ rsgi-wsrpc <span style="font-weight:400; opacity:0.7">Showcase</span></h1>
-      <p>Rust RSGI (Granian) + WSRPC (JSON-RPC 2.0) + Tabular Compression (RFC 0002)</p>
-    </div>
-    <div class="status-bar">
-      <div class="status-badge">
-        <div class="pulse-dot" id="ws-dot"></div>
-        <span id="ws-status">Подключение...</span>
+  <!-- ========================================================================
+       TOPBAR: STATUS, METRICS & ROLE SWITCHER
+       ======================================================================== -->
+  <header class="topbar">
+    <div class="topbar-content">
+      <div class="brand">
+        <span class="brand-title">⚡ rsgi-wsrpc <span style="font-weight:400; color:var(--text-secondary)">Showcase</span></span>
+        <span class="brand-badge">Granian RSGI &bull; JSON-RPC 2.0</span>
       </div>
-      <div class="metric-item" id="latency-val">RTT: -- ms</div>
+
+      <div class="status-cluster">
+        <div class="status-pill">
+          <div class="indicator-dot" id="ws-dot"></div>
+          <span id="ws-status">Connecting to WSRPC...</span>
+        </div>
+
+        <div class="status-pill metric-mono" id="rtt-meter">
+          RTT: -- ms
+        </div>
+
+        <div class="status-pill metric-mono" id="sessions-counter">
+          Active Sockets: 1
+        </div>
+
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span style="font-size:12px; color:var(--text-secondary); font-weight:500">Role:</span>
+          <select id="top-role-select" onchange="switchRole(this.value)">
+            <option value="guest">Guest</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+
+        <a href="/crud" target="_blank" class="btn btn-default btn-sm">🗄️ Open CRUD UI</a>
+      </div>
     </div>
   </header>
 
-  <!-- GRID OF FEATURES -->
-  <div class="grid-2">
+  <!-- ========================================================================
+       MAIN LAYOUT: SIDEBAR AND FEATURE SECTIONS
+       ======================================================================== -->
+  <div class="app-layout">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="nav-group-title">Architecture & Protocol</div>
+      <ul class="nav-list">
+        <li><a href="#sec-overview" class="nav-link active"><span class="nav-icon">⚡</span> 1. RSGI & Handshake</a></li>
+        <li><a href="#sec-tabular" class="nav-link"><span class="nav-icon">📊</span> 2. Tabular (RFC 0002)</a></li>
+        <li><a href="#sec-cache" class="nav-link"><span class="nav-icon">🔄</span> 3. Smart Cache (RFC 0001)</a></li>
+        <li><a href="#sec-crud" class="nav-link"><span class="nav-icon">🗄️</span> 4. Reactive CRUD</a></li>
+        <li><a href="#sec-stream" class="nav-link"><span class="nav-icon">🌊</span> 5. Multi-return Streaming</a></li>
+      </ul>
 
-    <!-- 1. TABULAR DATA COMPRESSION -->
-    <div class="card">
-      <div class="card-header">
-        <h2>📊 Табличное сжатие (RFC 0002)</h2>
-        <span class="tag">Zero Dict Overhead</span>
-      </div>
-      <p style="font-size:0.85rem; color:var(--text-muted)">
-        Сравнение размера сырого JSON со схемой <code>$tabular: true</code>. Названия колонок передаются 1 раз, данные — матрицей строк.
-      </p>
+      <div class="nav-group-title">Plugins & Capabilities</div>
+      <ul class="nav-list">
+        <li><a href="#sec-reverse-rpc" class="nav-link"><span class="nav-icon">🪞</span> 6. Reverse RPC</a></li>
+        <li><a href="#sec-broadcast" class="nav-link"><span class="nav-icon">📢</span> 7. Realtime Broadcast</a></li>
+        <li><a href="#sec-files" class="nav-link"><span class="nav-icon">📁</span> 8. 2PC File Upload</a></li>
+        <li><a href="#sec-rbac" class="nav-link"><span class="nav-icon">🔐</span> 9. RBAC & Security</a></li>
+        <li><a href="#sec-seo" class="nav-link"><span class="nav-icon">🤖</span> 10. SEO & Bot Detector</a></li>
+      </ul>
+    </aside>
 
-      <div class="compression-meter">
-        <div>
-          <div class="meter-lbl">Сырой JSON</div>
-          <div class="meter-val" id="raw-bytes" style="color:var(--text-muted)">0 B</div>
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+
+      <!-- ====================================================================
+           1. OVERVIEW & RSGI HANDSHAKE
+           ==================================================================== -->
+      <section id="sec-overview" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>⚡ 1. Rust RSGI Architecture & JSON-RPC 2.0</h2>
+            <p>High-performance native Granian RSGI handling without WSGI/ASGI intermediate overhead. Single persistent WebSocket for all requests.</p>
+          </div>
+          <span class="tag-badge">Granian RSGI &bull; Zero-Overhead</span>
         </div>
-        <div>
-          <div class="meter-lbl">Tabular (Wire)</div>
-          <div class="meter-val" id="tabular-bytes">0 B</div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Unlike REST requiring repeated TCP handshakes and header parsing, the browser opens one persistent connection. Any RPC call is handled in 0.2–1 ms latency.
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" onclick="testPing()">📡 Call system.ping</button>
+                <button class="btn btn-default" onclick="testSystemInfo()">🔍 Request system.info</button>
+              </div>
+              <div class="event-log-container" id="overview-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Ready to test connection...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-overview-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-overview-js')">JavaScript (Client)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-overview-wire')">Wire Frame</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-overview-py"><span class="dec">@app.rpc</span>(<span class="str">"system.ping"</span>, public=<span class="kw">True</span>)
+<span class="kw">async def</span> <span class="fn">ping</span>():
+    <span class="cmt"># Handlers return a clean dict or list!</span>
+    <span class="cmt"># Framework packages it into JSON-RPC 2.0 response.</span>
+    <span class="kw">return</span> {<span class="str">"status"</span>: <span class="str">"pong"</span>, <span class="str">"server_time"</span>: time.time()}</pre>
+              <pre class="code-view" id="c-overview-js" style="display:none;"><span class="cmt">// Simple call via lightweight WSRPC client:</span>
+<span class="kw">const</span> response = <span class="kw">await</span> rpc.call(<span class="str">'system.ping'</span>);
+console.log(response.result.status); <span class="cmt">// "pong"</span></pre>
+              <pre class="code-view" id="c-overview-wire" style="display:none;">--> {"jsonrpc": "2.0", "method": "system.ping", "params": {}, "id": 1}
+<-- {"jsonrpc": "2.0", "result": {"status": "pong", "server_time": 1728144000.12}, "id": 1}</pre>
+            </div>
+          </div>
         </div>
-        <div>
-          <div class="meter-lbl">Экономия</div>
-          <div class="meter-val" id="saved-pct" style="color:var(--accent-emerald)">0%</div>
+      </section>
+
+      <!-- ====================================================================
+           2. TABULAR COMPRESSION RFC 0002
+           ==================================================================== -->
+      <section id="sec-tabular" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>📊 2. Tabular Data Compression (RFC 0002)</h2>
+            <p>Eliminates repetitive JSON object keys in lists. Column names are transferred once, rows are passed as a compact 2D matrix.</p>
+          </div>
+          <span class="tag-badge">RFC 0002 &bull; @tabular_response</span>
         </div>
-      </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="metric-comparison-box">
+                <div>
+                  <div class="comp-lbl">Raw JSON Size</div>
+                  <div class="comp-val" id="raw-json-bytes" style="color:var(--text-muted)">0 B</div>
+                </div>
+                <div>
+                  <div class="comp-lbl">Tabular Wire Size</div>
+                  <div class="comp-val" id="wire-tabular-bytes" style="color:var(--primary)">0 B</div>
+                </div>
+                <div>
+                  <div class="comp-lbl">Traffic Saved</div>
+                  <div class="comp-val" id="compression-saved-pct" style="color:var(--success)">0%</div>
+                </div>
+              </div>
 
-      <div style="display:flex; gap:10px;">
-        <button class="btn btn-secondary" onclick="fetchTasks()">🔄 Запросить список (Tabular)</button>
-      </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary" onclick="loadTabularTasks()">🔄 Fetch tasks.list (Tabular)</button>
+                <button class="btn btn-default" onclick="loadRawJsonTasks()">Compare tasks.list_raw_json</button>
+              </div>
 
-      <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Сырой пакет по проводу ($tabular):</div>
-      <pre id="tabular-preview">{"$tabular": true, "fields": ["id", "title", "completed", "priority", "created_at"], "rows": [...]}</pre>
-    </div>
+              <div style="font-size:12px; color:var(--text-secondary); font-weight:600">Raw JSON-RPC Server Packet:</div>
+              <div class="event-log-container" id="tabular-wire-preview" style="max-height:100px;">
+                {"$tabular": true, "fields": ["id", "title", "completed", "priority", "created_at"], "rows": [...]}
+              </div>
+            </div>
 
-    <!-- 2. REACTIVE TASK TRACKER -->
-    <div class="card">
-      <div class="card-header">
-        <h2>📝 Реактивный трекер (plugins.db)</h2>
-        <span class="tag">SQLAlchemy 2.0 + SQLite</span>
-      </div>
-      <p style="font-size:0.85rem; color:var(--text-muted)">
-        Откройте страницу во второй вкладке: добавление или чекбокс моментально синхронизируются без перезагрузок и поллинга.
-      </p>
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-tabular-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-tabular-js')">JavaScript (Client)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-tabular-wire')">Wire Format</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-tabular-py"><span class="dec">@app.rpc</span>(<span class="str">"tasks.list"</span>)
+<span class="dec">@tabular_response</span>(fields=[<span class="str">"id"</span>, <span class="str">"title"</span>, <span class="str">"completed"</span>, <span class="str">"priority"</span>])
+<span class="kw">async def</span> <span class="fn">list_tasks</span>():
+    <span class="cmt"># Returns normal list of dicts or ORM models!</span>
+    <span class="cmt"># Decorator transforms payload to RFC 0002 on the fly.</span>
+    <span class="kw">return</span> <span class="kw">await</span> fetch_tasks_from_db()</pre>
+              <pre class="code-view" id="c-tabular-js" style="display:none;"><span class="cmt">// Client transparently unpacks tabular data:</span>
+<span class="kw">const</span> res = <span class="kw">await</span> rpc.call(<span class="str">'tasks.list'</span>);
+<span class="kw">const</span> items = unpackTabular(res.result); 
+<span class="cmt">// Back to standard array of objects {id, title, ...}</span></pre>
+              <pre class="code-view" id="c-tabular-wire" style="display:none;">{
+  "$tabular": true,
+  "fields": ["id", "title", "completed"],
+  "rows": [
+    [1, "Explore rsgi-wsrpc", true],
+    [2, "Enable RFC 0002", false]
+  ]
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <form class="task-form" onsubmit="handleAddTask(event)">
-        <input type="text" id="task-title-input" placeholder="Новая задача..." required>
-        <select id="task-priority-input">
-          <option value="normal">Normal</option>
-          <option value="high">High</option>
-          <option value="low">Low</option>
-        </select>
-        <button class="btn" type="submit">➕ Добавить</button>
-      </form>
+      <!-- ====================================================================
+           3. SMART CACHE & TAG INVALIDATION (RFC 0001)
+           ==================================================================== -->
+      <section id="sec-cache" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🔄 3. Smart Cache & Tag Invalidation (RFC 0001)</h2>
+            <p>Monotonic entity tag versions maintained in RAM and SQLite. Server proactively alerts clients about stale slices via <code>cache.invalidate</code>.</p>
+          </div>
+          <span class="tag-badge">RFC 0001 &bull; plugins.smart_cache</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Whenever tasks mutate, <code>@invalidates(tags=["tasks"])</code> increments the tag version. Browsers selectively invalidate client cache without full-page reloads!
+              </div>
 
-      <div class="task-list" id="task-container">
-        <!-- Tasks dynamically rendered here -->
-      </div>
-    </div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:600; font-size:13px;">Current Tag Versions on Server:</span>
+                <button class="btn btn-default btn-sm" onclick="refreshCacheVersions()">🔄 Refresh Versions</button>
+              </div>
 
-    <!-- 3. MULTI-RETURN STREAMING -->
-    <div class="card">
-      <div class="card-header">
-        <h2>🚀 Multi-return Стриминг</h2>
-        <span class="tag">stream: true</span>
-      </div>
-      <p style="font-size:0.85rem; color:var(--text-muted)">
-        Тяжелая серверная операция отправляет промежуточные этапы и процент прогресса прямо в едином WSRPC-запросе без блокировки сокета.
-      </p>
+              <div class="event-log-container" id="cache-tags-display" style="max-height:85px;">
+                Loading tag versions...
+              </div>
 
-      <button class="btn" id="stream-btn" onclick="runHeavyJob()">▶ Запустить тяжелую операцию</button>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <button class="btn btn-default" onclick="triggerManualInvalidate('tasks')">⚡ Invalidate "tasks" tag</button>
+                <button class="btn btn-default" onclick="triggerManualInvalidate('documents')">⚡ Invalidate "documents"</button>
+              </div>
 
-      <div class="progress-track">
-        <div class="progress-fill" id="stream-progress"></div>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted)">
-        <span id="stream-stage">Ожидание запуска...</span>
-        <span id="stream-pct">0%</span>
-      </div>
+              <div class="event-log-container" id="cache-events-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Listening for cache.invalidate events...</span></div>
+              </div>
+            </div>
 
-      <div class="log-box" id="stream-logs">// Лог промежуточных чанков сервера...</div>
-    </div>
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-cache-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-cache-js')">JavaScript (Client)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-cache-wire')">Wire Event</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-cache-py"><span class="kw">from</span> rsgi_wsrpc.plugins.smart_cache <span class="kw">import</span> invalidates
 
-    <!-- 4. RBAC & SECURITY -->
-    <div class="card">
-      <div class="card-header">
-        <h2>🔐 Роли и Безопасность (plugins.auth)</h2>
-        <span class="tag">RBAC @rpc_method</span>
-      </div>
-      <p style="font-size:0.85rem; color:var(--text-muted)">
-        Проверка прав на уровне декоратора ядра. Метод <code>admin.system_info</code> требует строгую роль <code>admin</code>.
-      </p>
+<span class="dec">@app.rpc</span>(<span class="str">"tasks.toggle"</span>)
+<span class="dec">@invalidates</span>(tags=[<span class="str">"tasks"</span>, <span class="str">"task.{id}"</span>])
+<span class="kw">async def</span> <span class="fn">toggle_task</span>(task_id: int):
+    <span class="cmt"># On success, versions for 'tasks' and 'task.12'</span>
+    <span class="cmt"># monotonically increase in RAM and broadcast to sockets!</span>
+    <span class="kw">return</span> <span class="kw">await</span> db_toggle(task_id)</pre>
+              <pre class="code-view" id="c-cache-js" style="display:none;"><span class="cmt">// Reactive cache listener:</span>
+rpc.onNotification(<span class="str">'cache.invalidate'</span>, (event) => {
+  console.log(<span class="str">'Stale tags:'</span>, event.tags);
+  <span class="cmt">// event.versions: {"tasks": 4}</span>
+  <span class="kw">if</span> (event.tags.includes(<span class="str">'tasks'</span>)) {
+    clientCache.delete(<span class="str">'tasks.list'</span>);
+    reloadTasksUI();
+  }
+});</pre>
+              <pre class="code-view" id="c-cache-wire" style="display:none;">// Server broadcast notification (pushed to all sockets):
+{
+  "jsonrpc": "2.0",
+  "method": "cache.invalidate",
+  "params": {
+    "tags": ["tasks", "task.3"],
+    "versions": {"tasks": 4, "task.3": 2},
+    "reason": "mutation"
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span style="font-size:0.85rem; color:var(--text-muted)">Текущая роль сессии:</span>
-        <select id="role-select" onchange="changeRole(this.value)">
-          <option value="guest">Guest (Гость)</option>
-          <option value="user">User (Пользователь)</option>
-          <option value="admin">Admin (Администратор)</option>
-        </select>
-      </div>
+      <!-- ====================================================================
+           4. REACTIVE TRACKER & CRUD (PLUGINS.CRUD)
+           ==================================================================== -->
+      <section id="sec-crud" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🗄️ 4. Reactive Task Tracker (SQLAlchemy + plugins.crud)</h2>
+            <p>Declarative model definitions via <code>class Crud:</code>. Real-time synchronisation across every connected browser tab.</p>
+          </div>
+          <span class="tag-badge">plugins.crud &bull; SQLAlchemy 2.0</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <form id="task-create-form" onsubmit="handleCreateTask(event)" style="display:flex; gap:8px;">
+                <input type="text" id="task-title-input" placeholder="New task title..." required style="flex:1;">
+                <select id="task-priority-input">
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="low">Low</option>
+                </select>
+                <button type="submit" class="btn btn-primary">➕ Add Task</button>
+              </form>
 
-      <div>
-        <button class="btn btn-secondary" onclick="callAdminMethod()">⚡ Вызвать admin.system_info</button>
-      </div>
+              <div class="data-table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width:40px;">Done</th>
+                      <th>Title</th>
+                      <th style="width:80px;">Priority</th>
+                      <th style="width:50px;">Delete</th>
+                    </tr>
+                  </thead>
+                  <tbody id="task-table-body">
+                    <tr><td colspan="4" style="text-align:center; color:var(--text-muted)">Loading tasks...</td></tr>
+                  </tbody>
+                </table>
+              </div>
 
-      <div style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Результат RPC-вызова:</div>
-      <pre id="admin-result">// Ответ появится здесь...</pre>
-    </div>
+              <div class="info-callout">
+                💡 <b>Tip:</b> Open this URL in a second browser window. Any checkbox toggle, task addition, or deletion synchronises instantly without reloading!
+              </div>
+            </div>
 
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-crud-py')">Python (Model & Crud)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-crud-endpoints')">Generated CRUD API</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-crud-js')">JS Calls</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-crud-py"><span class="kw">class</span> <span class="fn">Task</span>(Base):
+    __tablename__ = <span class="str">"showcase_tasks"</span>
+    id = Column(Integer, primary_key=<span class="kw">True</span>)
+    title = Column(String(255), nullable=<span class="kw">False</span>)
+    completed = Column(Boolean, default=<span class="kw">False</span>)
+    
+    <span class="cmt"># Declarative config for auto-CRUD panel:</span>
+    <span class="kw">class</span> <span class="fn">Crud</span>:
+        verbose_name = <span class="str">"Task"</span>
+        verbose_name_plural = <span class="str">"Tasks"</span>
+        readonly = {<span class="str">"created_at"</span>}</pre>
+              <pre class="code-view" id="c-crud-endpoints" style="display:none;"><span class="cmt"># Registration enables a complete RPC endpoint family:</span>
+ModelRegistry.register(Task)
+
+<span class="cmt"># Out-of-the-box methods:</span>
+- <span class="str">crud.schema</span>        (model metadata & field types)
+- <span class="str">crud.list</span>          (paginated list with $tabular)
+- <span class="str">crud.get</span>           (retrieve single record)
+- <span class="str">crud.create</span>        (validation and insert)
+- <span class="str">crud.update_cell</span>   (atomic single-cell edit)
+- <span class="str">crud.delete</span>        (cascade delete)</pre>
+              <pre class="code-view" id="c-crud-js" style="display:none;"><span class="cmt">// Add task:</span>
+<span class="kw">await</span> rpc.call(<span class="str">'tasks.add'</span>, { title: <span class="str">'Task 1'</span>, priority: <span class="str">'high'</span> });
+
+<span class="cmt">// Toggle completion:</span>
+<span class="kw">await</span> rpc.call(<span class="str">'tasks.toggle'</span>, { id: 42 });
+
+<span class="cmt">// Delete:</span>
+<span class="kw">await</span> rpc.call(<span class="str">'tasks.delete'</span>, { id: 42 });</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           5. MULTI-RETURN STREAMING (STREAM: TRUE)
+           ==================================================================== -->
+      <section id="sec-stream" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🌊 5. Multi-return Streaming (stream: true)</h2>
+            <p>Push intermediate progress chunks inside a single JSON-RPC call without blocking the WebSocket pipeline.</p>
+          </div>
+          <span class="tag-badge">stream: true &bull; Non-blocking</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Unlike HTTP REST requiring long-polling or SSE connections, handlers stream chunks via <code>session.send_stream_chunk</code> within the active <code>rpc_id</code>.
+              </div>
+
+              <div>
+                <button class="btn btn-primary" id="btn-run-stream" onclick="triggerStreamingJob()">▶ Run Heavy Job (1.5s)</button>
+              </div>
+
+              <div class="progress-bar-container">
+                <div class="progress-bar-val" id="stream-progress-bar"></div>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary);">
+                <span id="stream-stage-label">Status: Idle</span>
+                <span id="stream-pct-label" class="metric-mono">0%</span>
+              </div>
+
+              <div class="event-log-container" id="stream-chunks-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Intermediate stream chunk log...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-stream-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-stream-js')">JavaScript (Client)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-stream-wire')">Wire Chunks</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-stream-py"><span class="dec">@app.rpc</span>(<span class="str">"stream.heavy_job"</span>)
+<span class="kw">async def</span> <span class="fn">heavy_job</span>(session: JsonRpcSession):
+    rpc_id = current_rpc_id_ctx.get()
+    <span class="kw">for</span> pct <span class="kw">in</span> [25, 50, 75]:
+        <span class="kw">await</span> asyncio.sleep(0.4)
+        <span class="cmt"># Push intermediate chunk to client:</span>
+        <span class="kw">await</span> session.send_stream_chunk(rpc_id, {<span class="str">"progress"</span>: pct})
+
+    <span class="cmt"># Final return resolves the overall RPC call:</span>
+    <span class="kw">return</span> {<span class="str">"progress"</span>: 100, <span class="str">"status"</span>: <span class="str">"done"</span>}</pre>
+              <pre class="code-view" id="c-stream-js" style="display:none;"><span class="cmt">// Client registers chunk callback:</span>
+<span class="kw">await</span> rpc.requestStream(<span class="str">'stream.heavy_job'</span>, {}, (chunk) => {
+  console.log(<span class="str">'Intermediate progress:'</span>, chunk.progress);
+  updateProgressBar(chunk.progress);
+});</pre>
+              <pre class="code-view" id="c-stream-wire" style="display:none;">// Chunk 1 (intermediate):
+{"jsonrpc":"2.0", "result":{"stream":true, "data":{"progress":25}}, "id":4}
+
+// Chunk 2 (intermediate):
+{"jsonrpc":"2.0", "result":{"stream":true, "data":{"progress":50}}, "id":4}
+
+// Final result:
+{"jsonrpc":"2.0", "result":{"progress":100, "status":"done"}, "id":4}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           6. REVERSE RPC (SERVER CALLS CLIENT)
+           ==================================================================== -->
+      <section id="sec-reverse-rpc" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🪞 6. Symmetric Reverse RPC (Server &rarr; Client)</h2>
+            <p>Full-duplex JSON-RPC 2.0: the server initiates calls to the browser via <code>session.send_request()</code> and awaits responses.</p>
+          </div>
+          <span class="tag-badge">Symmetric WSRPC &bull; Bidirectional</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                No bespoke protocols required: the server queries browser viewport dimensions, timezone, or telemetry and awaits the answer seamlessly.
+              </div>
+
+              <div>
+                <button class="btn btn-primary" onclick="triggerReverseRpcTest()">🪞 Ask Server to Inspect Browser</button>
+              </div>
+
+              <div class="event-log-container" id="reverse-rpc-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Click button to trigger server-to-client call...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-rev-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-rev-js')">JavaScript (Client Handler)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-rev-wire')">Wire Trace</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-rev-py"><span class="dec">@app.rpc</span>(<span class="str">"reverse_rpc.ask_client"</span>)
+<span class="kw">async def</span> <span class="fn">ask_client</span>(session: JsonRpcSession):
+    <span class="cmt"># Server initiates request to browser and awaits result!</span>
+    client_res = <span class="kw">await</span> session.send_request(
+        method=<span class="str">"client.get_env"</span>,
+        params={<span class="str">"server_now"</span>: time.time()},
+        timeout=4.0
+    )
+    <span class="kw">return</span> {<span class="str">"received_from_browser"</span>: client_res}</pre>
+              <pre class="code-view" id="c-rev-js" style="display:none;"><span class="cmt">// Client method registration:</span>
+rpc.registerMethod(<span class="str">'client.get_env'</span>, (params) => {
+  <span class="kw">return</span> {
+    userAgent: navigator.userAgent,
+    screen: `${window.innerWidth}x${window.innerHeight}`,
+    browserTime: <span class="kw">new</span> Date().toISOString()
+  };
+});</pre>
+              <pre class="code-view" id="c-rev-wire" style="display:none;">// 1. Server sends request to client (generated id):
+<-- {"jsonrpc":"2.0", "method":"client.get_env", "params":{...}, "id": 1001}
+
+// 2. Browser responds to server:
+--> {"jsonrpc":"2.0", "result":{"screen":"1920x1080"}, "id": 1001}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           7. BROADCAST (PLUGINS.BROADCAST)
+           ==================================================================== -->
+      <section id="sec-broadcast" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>📢 7. Zero-Copy Broadcast Messaging (plugins.broadcast)</h2>
+            <p>O(1) push notifications to all connected sockets. Byte serialization runs once in memory and broadcasts across connections.</p>
+          </div>
+          <span class="tag-badge">plugins.broadcast &bull; O(1) Push</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Post an announcement — it will appear instantly across all opened browser tabs without delay or polling.
+              </div>
+
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="broadcast-input" placeholder="Type announcement for all connected tabs..." style="flex:1;">
+                <button class="btn btn-primary" onclick="sendBroadcastMsg()">📢 Broadcast</button>
+              </div>
+
+              <div class="event-log-container" id="broadcast-feed" style="max-height:130px;">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Broadcast feed is empty...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-broad-py')">Python (Server)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-broad-js')">JavaScript (Client)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-broad-wire')">Wire Event</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-broad-py"><span class="kw">from</span> rsgi_wsrpc.plugins.broadcast <span class="kw">import</span> broadcast_notification
+
+<span class="dec">@app.rpc</span>(<span class="str">"broadcast.send_announcement"</span>)
+<span class="kw">async def</span> <span class="fn">send_announcement</span>(text: str):
+    <span class="cmt"># Serialized 1x via orjson, dispatched to all sockets:</span>
+    <span class="kw">await</span> broadcast_notification(
+        method=<span class="str">"community.alert"</span>,
+        params={<span class="str">"text"</span>: text, <span class="str">"timestamp"</span>: time.time()}
+    )
+    <span class="kw">return</span> {<span class="str">"sent"</span>: <span class="kw">True</span>}</pre>
+              <pre class="code-view" id="c-broad-js" style="display:none;"><span class="cmt">// Notification subscription:</span>
+rpc.onNotification(<span class="str">'community.alert'</span>, (data) => {
+  displayBanner(data.text);
+});</pre>
+              <pre class="code-view" id="c-broad-wire" style="display:none;">// Incoming notification frame (no id field):
+{
+  "jsonrpc": "2.0",
+  "method": "community.alert",
+  "params": {
+    "text": "System notification",
+    "timestamp": 1728144000.5
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           8. 2PC FILE UPLOAD (PLUGINS.FILES)
+           ==================================================================== -->
+      <section id="sec-files" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>📁 8. Two-Phase Commit 2PC File Upload (plugins.files)</h2>
+            <p>RSGI HTTP streaming directly to disk with O(1) RAM. Two-Phase Commit (2PC) guarantees atomic file promotion.</p>
+          </div>
+          <span class="tag-badge">plugins.files &bull; Zero-RAM Stream</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Raw bytes stream from Granian's TCP socket straight onto disk via <code>stream_request_to_disk</code> with zero RAM buffering.
+              </div>
+
+              <div class="dropzone" id="file-dropzone" onclick="document.getElementById('file-input').click()">
+                <input type="file" id="file-input" style="display:none;" onchange="handleFileUpload(this.files[0])">
+                <div style="font-weight:600; font-size:13px; color:var(--text-main);">Click or drag & drop a file to upload</div>
+                <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Direct stream to RSGI endpoint <code>POST /upload</code></div>
+              </div>
+
+              <div class="event-log-container" id="files-upload-log" style="max-height:100px;">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Select or drop a file to test streaming...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-files-py')">Python (Streamer)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-files-js')">JS Fetch Upload</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-files-arch')">2PC Architecture</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-files-py"><span class="dec">@http_route</span>(<span class="str">"/upload"</span>, [<span class="str">"POST"</span>])
+<span class="kw">async def</span> <span class="fn">upload_handler</span>(scope, proto):
+    <span class="cmt"># Streaming chunks directly to disk file (O(1) RAM):</span>
+    bytes_count, sha256 = <span class="kw">await</span> stream_request_to_disk(proto, dest_path)
+    proto.response_str(200, [(<span class="str">"content-type"</span>, <span class="str">"application/json"</span>)],
+                       orjson.dumps({<span class="str">"bytes"</span>: bytes_count, <span class="str">"sha256"</span>: sha256}))</pre>
+              <pre class="code-view" id="c-files-js" style="display:none;"><span class="cmt">// Stream file body via Fetch API:</span>
+<span class="kw">const</span> resp = <span class="kw">await</span> fetch(<span class="str">`/upload?filename=${file.name}`</span>, {
+  method: <span class="str">'POST'</span>,
+  headers: { <span class="str">'Content-Type'</span>: file.type || <span class="str">'application/octet-stream'</span> },
+  body: file <span class="cmt">// Zero multipart overhead</span>
+});
+<span class="kw">const</span> data = <span class="kw">await</span> resp.json();</pre>
+              <pre class="code-view" id="c-files-arch" style="display:none;">1. Prepare Phase:
+   HTTP POST /upload?folder=... (stream chunks to staging directory)
+
+2. Permission Check:
+   GET /auth-check-upload (Bearer JWT validation)
+
+3. Commit Phase:
+   WSRPC: files.commit(folder=...) (atomic move to persistent storage)</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           9. RBAC & SECURITY (PLUGINS.AUTH)
+           ==================================================================== -->
+      <section id="sec-rbac" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🔐 9. RBAC Roles & Token Bucket Flood Guard</h2>
+            <p>Declarative permission checks via <code>role=UserRole.ADMIN</code>. Built-in rate limiting with 30 rps/sec per socket.</p>
+          </div>
+          <span class="tag-badge">plugins.auth &bull; RBAC</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Method <code>admin.system_info</code> strictly requires administrator privileges. Change the role and test the kernel's response.
+              </div>
+
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span style="font-weight:600; font-size:13px;">Active Role:</span>
+                <select id="rbac-role-select" onchange="switchRole(this.value)">
+                  <option value="guest">Guest</option>
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <button class="btn btn-default" onclick="testAdminRbacMethod()">⚡ Call Protected admin.system_info</button>
+              </div>
+
+              <div class="event-log-container" id="rbac-result-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">RBAC permission result will appear here...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-rbac-py')">Python (Security)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-rbac-js')">JS Error Handling</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-rbac-wire')">Wire Error</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-rbac-py"><span class="kw">from</span> rsgi_wsrpc.core.constants <span class="kw">import</span> UserRole
+
+<span class="dec">@app.rpc</span>(<span class="str">"admin.system_info"</span>, role=UserRole.ADMIN)
+<span class="kw">async def</span> <span class="fn">admin_system_info</span>(session: JsonRpcSession):
+    <span class="cmt"># If role is lower than ADMIN, kernel auto-returns</span>
+    <span class="cmt"># RPCError(-32003, "Access denied") without invoking the handler!</span>
+    <span class="kw">return</span> {<span class="str">"active_sockets"</span>: len(ACTIVE_SESSIONS_SET)}</pre>
+              <pre class="code-view" id="c-rbac-js" style="display:none;"><span class="cmt">// Client error handling:</span>
+<span class="kw">try</span> {
+  <span class="kw">await</span> rpc.call(<span class="str">'admin.system_info'</span>);
+} <span class="kw">catch</span> (err) {
+  <span class="cmt">// err.code === -32003</span>
+  console.warn(<span class="str">'Access rejected:'</span>, err.message);
+}</pre>
+              <pre class="code-view" id="c-rbac-wire" style="display:none;">// Access denied response frame:
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32003,
+    "message": "Access denied"
+  },
+  "id": 8
+}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====================================================================
+           10. SEO & CRAWLER DETECTOR (PLUGINS.SEO)
+           ==================================================================== -->
+      <section id="sec-seo" class="feature-card">
+        <div class="feature-header">
+          <div class="feature-title-block">
+            <h2>🤖 10. SEO, Dynamic Rendering & Bot Detector (plugins.seo)</h2>
+            <p>Automatic detection of search engine crawlers (Googlebot, Yandex, Bing) with pre-rendered static HTML and OpenGraph tags.</p>
+          </div>
+          <span class="tag-badge">plugins.seo &bull; Dynamic Rendering</span>
+        </div>
+        <div class="feature-body">
+          <div class="split-grid">
+            <div class="sandbox-panel">
+              <div class="info-callout">
+                Web crawlers do not execute WebSockets. <code>plugins.seo</code> detects bot User-Agents and immediately renders static SSR HTML with full metadata.
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <label style="font-size:12px; font-weight:600; color:var(--text-secondary)">Inspect User-Agent:</label>
+                <select id="seo-ua-select">
+                  <option value="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)">Googlebot (Google Search)</option>
+                  <option value="Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)">YandexBot (Yandex Crawler)</option>
+                  <option value="TelegramBot (like TwitterBot)">TelegramBot (Link Preview)</option>
+                  <option value="curl/7.81.0">curl / CLI scraper</option>
+                  <option value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36">Standard Browser (Google Chrome)</option>
+                </select>
+              </div>
+
+              <div>
+                <button class="btn btn-default" onclick="testBotDetection()">🔍 Evaluate with is_bot()</button>
+              </div>
+
+              <div class="event-log-container" id="seo-result-log">
+                <div class="event-item"><span class="event-time">--:--:--</span><span class="event-msg">Select a User-Agent to inspect crawler detector...</span></div>
+              </div>
+            </div>
+
+            <!-- CODE INSPECTOR -->
+            <div class="code-inspector">
+              <div class="code-tabs">
+                <div class="tab-buttons">
+                  <button class="code-tab-btn active" onclick="switchCodeTab(this, 'c-seo-py')">Python (Bot Router)</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-seo-meta')">SEO Metadata Schema</button>
+                  <button class="code-tab-btn" onclick="switchCodeTab(this, 'c-seo-wire')">SSR Response</button>
+                </div>
+                <button class="btn-copy" onclick="copyCode(this)">Copy</button>
+              </div>
+              <pre class="code-view" id="c-seo-py"><span class="kw">from</span> rsgi_wsrpc.plugins.seo <span class="kw">import</span> bot_page, render_seo_page
+
+<span class="dec">@bot_page</span>(<span class="str">"/articles/{slug}"</span>)
+<span class="kw">async def</span> <span class="fn">article_seo</span>(slug: str):
+    article = <span class="kw">await</span> get_article(slug)
+    <span class="cmt"># Renders structured tags for search crawlers:</span>
+    <span class="kw">return</span> render_seo_page(
+        title=article.title,
+        description=article.summary,
+        og_image=article.cover_url
+    )</pre>
+              <pre class="code-view" id="c-seo-meta" style="display:none;"><span class="cmt"># plugins.seo emits valid HTML tags:</span>
+<meta property="og:title" content="Page Title">
+<meta property="og:description" content="Summary text">
+<meta property="og:type" content="article">
+<meta name="twitter:card" content="summary_large_image"></pre>
+              <pre class="code-view" id="c-seo-wire" style="display:none;">// Bots receive pure HTML with 200 OK:
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Article &bull; rsgi-wsrpc</title>
+  <meta property="og:title" content="..." />
+</head>
+<body>...</body>
+</html></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
   </div>
 
   <footer>
-    rsgi-wsrpc &bull; Open-Source высокоскоростной фреймворк для Python &bull;
-    <a href="https://github.com/atitoff-dotcom/rsgi-wsrpc" target="_blank">GitHub Repository</a>
+    <b>rsgi-wsrpc</b> &bull; High-Performance Reactive Python Framework on Rust RSGI (Granian) &bull;
+    <a href="https://github.com/atitoff-dotcom/rsgi-wsrpc" target="_blank" style="color:var(--primary); text-decoration:none; margin-left:6px;">GitHub Repository</a>
   </footer>
-</div>
 
-<script>
-// --- МИНИМАЛЬНЫЙ КЛИЕНТ WSRPC (JSON-RPC 2.0 + TABULAR) ---
-class WSRPC {
-  constructor(url) {
-    this.url = url;
-    this.ws = null;
-    this.reqId = 1;
-    this.pending = new Map();
-    this.streamListeners = new Map();
-    this.notificationHandlers = new Map();
-  }
-
-  connect() {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    this.ws = new WebSocket(`${proto}//${host}/`);
-
-    this.ws.onopen = () => {
-      document.getElementById('ws-dot').classList.add('online');
-      document.getElementById('ws-status').textContent = 'Подключено (WSRPC)';
-      fetchTasks();
-    };
-
-    this.ws.onclose = () => {
-      document.getElementById('ws-dot').classList.remove('online');
-      document.getElementById('ws-status').textContent = 'Отключено (Реконнект...)';
-      setTimeout(() => this.connect(), 2000);
-    };
-
-    this.ws.onmessage = (evt) => {
-      const msg = JSON.parse(evt.data);
-
-      // 1. Нотификация от сервера (без id)
-      if (!msg.id && msg.method) {
-        const handler = this.notificationHandlers.get(msg.method);
-        if (handler) handler(msg.params);
-        return;
+  <!-- ========================================================================
+       CLIENT SCRIPT: WSRPC CLIENT, TABULAR, CACHE & UI LOGIC
+       ======================================================================== -->
+  <script>
+    // --- 1. WSRPC CLIENT (JSON-RPC 2.0 WITH REVERSE RPC SUPPORT) ---
+    class WSRPCClient {
+      constructor() {
+        this.ws = null;
+        this.reqId = 1;
+        this.pending = new Map();
+        this.streamListeners = new Map();
+        this.notificationHandlers = new Map();
+        this.clientMethods = new Map();
       }
 
-      // 2. Потоковый чанк multi-return (stream: true)
-      if (msg.result && msg.result.stream === true && this.streamListeners.has(msg.id)) {
-        const listener = this.streamListeners.get(msg.id);
-        listener(msg.result.data);
-        return;
+      connect() {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        this.ws = new WebSocket(`${proto}//${host}/`);
+
+        this.ws.onopen = () => {
+          document.getElementById('ws-dot').classList.add('online');
+          document.getElementById('ws-status').textContent = 'Connected (WSRPC)';
+          this.startPingLoop();
+          loadTabularTasks();
+          refreshCacheVersions();
+          testSystemInfo(true);
+        };
+
+        this.ws.onclose = () => {
+          document.getElementById('ws-dot').classList.remove('online');
+          document.getElementById('ws-status').textContent = 'Disconnected (Reconnecting...)';
+          if (this.pingInterval) clearInterval(this.pingInterval);
+          setTimeout(() => this.connect(), 2000);
+        };
+
+        this.ws.onmessage = (evt) => {
+          let msg;
+          try {
+            msg = JSON.parse(evt.data);
+          } catch(e) {
+            return;
+          }
+
+          // A. Server calls method registered in client (Reverse RPC)
+          if (msg.id !== undefined && msg.method && !('result' in msg) && !('error' in msg)) {
+            this.handleServerCall(msg);
+            return;
+          }
+
+          // B. Server notification (no id)
+          if (msg.id === undefined && msg.method) {
+            const handler = this.notificationHandlers.get(msg.method);
+            if (handler) handler(msg.params);
+            return;
+          }
+
+          // C. Multi-return streaming chunk (stream: true)
+          if (msg.result && msg.result.stream === true && this.streamListeners.has(msg.id)) {
+            const listener = this.streamListeners.get(msg.id);
+            listener(msg.result.data);
+            return;
+          }
+
+          // D. Final RPC response
+          if (this.pending.has(msg.id)) {
+            const { resolve, reject, startTime } = this.pending.get(msg.id);
+            this.pending.delete(msg.id);
+            this.streamListeners.delete(msg.id);
+
+            const rtt = Math.round(performance.now() - startTime);
+            document.getElementById('rtt-meter').textContent = `RTT: ${rtt} ms`;
+
+            if (msg.error) {
+              reject(msg.error);
+            } else {
+              resolve({ result: msg.result, raw: evt.data, rtt });
+            }
+          }
+        };
       }
 
-      // 3. Финальный ответ RPC
-      if (this.pending.has(msg.id)) {
-        const { resolve, reject, startTime } = this.pending.get(msg.id);
-        this.pending.delete(msg.id);
-        this.streamListeners.delete(msg.id);
+      call(method, params = {}) {
+        return new Promise((resolve, reject) => {
+          const id = this.reqId++;
+          const payload = { jsonrpc: '2.0', method, params, id };
+          this.pending.set(id, { resolve, reject, startTime: performance.now() });
+          this.ws.send(JSON.stringify(payload));
+        });
+      }
 
-        const rtt = Math.round(performance.now() - startTime);
-        document.getElementById('latency-val').textContent = `RTT: ${rtt} ms`;
+      requestStream(method, params, onChunk) {
+        return new Promise((resolve, reject) => {
+          const id = this.reqId++;
+          const payload = { jsonrpc: '2.0', method, params, id };
+          this.pending.set(id, { resolve, reject, startTime: performance.now() });
+          if (onChunk) this.streamListeners.set(id, onChunk);
+          this.ws.send(JSON.stringify(payload));
+        });
+      }
 
-        if (msg.error) {
-          reject(msg.error);
+      onNotification(method, handler) {
+        this.notificationHandlers.set(method, handler);
+      }
+
+      registerMethod(name, handler) {
+        this.clientMethods.set(name, handler);
+      }
+
+      async handleServerCall(msg) {
+        const handler = this.clientMethods.get(msg.method);
+        if (handler) {
+          try {
+            const result = await handler(msg.params || {});
+            const resp = { jsonrpc: '2.0', result: result, id: msg.id };
+            this.ws.send(JSON.stringify(resp));
+          } catch(err) {
+            const resp = { jsonrpc: '2.0', error: { code: -32000, message: String(err) }, id: msg.id };
+            this.ws.send(JSON.stringify(resp));
+          }
         } else {
-          resolve({ result: msg.result, raw: evt.data });
+          const resp = { jsonrpc: '2.0', error: { code: -32601, message: `Client method ${msg.method} not found` }, id: msg.id };
+          this.ws.send(JSON.stringify(resp));
         }
       }
-    };
-  }
 
-  call(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = this.reqId++;
-      const payload = { jsonrpc: '2.0', method, params, id };
-      this.pending.set(id, { resolve, reject, startTime: performance.now() });
-      this.ws.send(JSON.stringify(payload));
-    });
-  }
+      startPingLoop() {
+        this.pingInterval = setInterval(async () => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            try {
+              await this.call('system.ping');
+            } catch(e) {}
+          }
+        }, 8000);
+      }
+    }
 
-  requestStream(method, params, onChunk) {
-    return new Promise((resolve, reject) => {
-      const id = this.reqId++;
-      const payload = { jsonrpc: '2.0', method, params, id };
-      this.pending.set(id, { resolve, reject, startTime: performance.now() });
-      if (onChunk) this.streamListeners.set(id, onChunk);
-      this.ws.send(JSON.stringify(payload));
-    });
-  }
+    // --- 2. TABULAR DECOMPRESSOR RFC 0002 ---
+    function unpackTabular(data) {
+      if (!data || typeof data !== 'object') return data;
+      if (data.$tabular === true && Array.isArray(data.fields) && Array.isArray(data.rows)) {
+        const fields = data.fields;
+        return data.rows.map(row => {
+          const obj = {};
+          fields.forEach((f, idx) => { obj[f] = row[idx]; });
+          return obj;
+        });
+      }
+      return data;
+    }
 
-  onNotification(method, handler) {
-    this.notificationHandlers.set(method, handler);
-  }
-}
+    // --- 3. INITIALIZATION & REACTION HANDLERS ---
+    const rpc = new WSRPCClient();
 
-// Декомпрессор Tabular Data (RFC 0002)
-function unpackTabular(data) {
-  if (!data || typeof data !== 'object') return data;
-  if (data.$tabular === true && Array.isArray(data.fields) && Array.isArray(data.rows)) {
-    const fields = data.fields;
-    return data.rows.map(row => {
-      const obj = {};
-      fields.forEach((f, idx) => { obj[f] = row[idx]; });
-      return obj;
-    });
-  }
-  return data;
-}
-
-// Инициализация WSRPC
-const rpc = new WSRPC();
-rpc.connect();
-
-// Подписка на изменение задач из других вкладок
-rpc.onNotification('tasks.changed', () => {
-  fetchTasks();
-});
-
-// --- UI ЛОГИКА И ХЕНДЛЕРЫ ---
-
-async function fetchTasks() {
-  try {
-    const res = await rpc.call('tasks.list');
-    const rawWireString = res.raw;
-
-    // Считаем размер сырых данных в байтах
-    const wireBytes = new Blob([rawWireString]).size;
-    document.getElementById('tabular-bytes').textContent = wireBytes + ' B';
-    document.getElementById('tabular-preview').textContent = JSON.stringify(res.result, null, 2);
-
-    // Распаковываем табличные данные
-    const tasks = unpackTabular(res.result);
-
-    // Считаем размер эквивалентного несжатого JSON (списка словарей)
-    const rawJsonStr = JSON.stringify(tasks);
-    const rawBytes = new Blob([rawJsonStr]).size;
-    document.getElementById('raw-bytes').textContent = rawBytes + ' B';
-
-    // Считаем процент экономии
-    const savedPct = rawBytes > 0 ? Math.max(0, Math.round((1 - (wireBytes / rawBytes)) * 100)) : 0;
-    document.getElementById('saved-pct').textContent = savedPct + '%';
-
-    renderTasks(tasks);
-  } catch (err) {
-    console.error('Ошибка загрузки задач:', err);
-  }
-}
-
-function renderTasks(tasks) {
-  const container = document.getElementById('task-container');
-  if (!tasks || tasks.length === 0) {
-    container.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:12px; text-align:center;">Задач пока нет. Добавьте первую!</div>';
-    return;
-  }
-
-  container.innerHTML = tasks.map(t => `
-    <div class="task-item ${t.completed ? 'done' : ''}">
-      <div class="task-info">
-        <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask(${t.id})">
-        <span class="task-title">${escapeHtml(t.title)}</span>
-        <span class="priority-badge priority-${t.priority}">${t.priority}</span>
-      </div>
-      <button class="btn btn-danger" onclick="deleteTask(${t.id})">Удалить</button>
-    </div>
-  `).join('');
-}
-
-async function handleAddTask(e) {
-  e.preventDefault();
-  const titleInput = document.getElementById('task-title-input');
-  const priorityInput = document.getElementById('task-priority-input');
-  const title = titleInput.value.trim();
-  if (!title) return;
-
-  try {
-    await rpc.call('tasks.add', { title, priority: priorityInput.value });
-    titleInput.value = '';
-    fetchTasks();
-  } catch (err) {
-    alert('Ошибка добавления: ' + (err.message || err));
-  }
-}
-
-async function toggleTask(id) {
-  try {
-    await rpc.call('tasks.toggle', { id });
-    fetchTasks();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-async function deleteTask(id) {
-  try {
-    await rpc.call('tasks.delete', { id });
-    fetchTasks();
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-async function runHeavyJob() {
-  const btn = document.getElementById('stream-btn');
-  const pBar = document.getElementById('stream-progress');
-  const pStage = document.getElementById('stream-stage');
-  const pPct = document.getElementById('stream-pct');
-  const logs = document.getElementById('stream-logs');
-
-  btn.disabled = true;
-  logs.textContent = '';
-  pBar.style.width = '0%';
-
-  function appendLog(msg) {
-    logs.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
-    logs.scrollTop = logs.scrollHeight;
-  }
-
-  appendLog('Отправка WSRPC stream запроса...');
-
-  try {
-    const res = await rpc.requestStream('stream.heavy_job', {}, (chunk) => {
-      pBar.style.width = chunk.progress + '%';
-      pPct.textContent = chunk.progress + '%';
-      pStage.textContent = chunk.message;
-      appendLog(`[ЧАНК] ${chunk.progress}%: ${chunk.message}`);
+    // Register client handler for Reverse RPC
+    rpc.registerMethod('client.get_env', (params) => {
+      appendLog('reverse-rpc-log', 'Browser received client.get_env call from server!', 'highlight');
+      return {
+        userAgent: navigator.userAgent,
+        screenResolution: `${window.innerWidth}x${window.innerHeight}`,
+        language: navigator.language,
+        timestamp: new Date().toLocaleTimeString()
+      };
     });
 
-    pBar.style.width = '100%';
-    pPct.textContent = '100%';
-    pStage.textContent = res.result.message;
-    appendLog(`[ФИНАЛ] Завершено: ${res.result.summary}`);
-  } catch (err) {
-    appendLog(`[ОШИБКА] ${err.message || err}`);
-  } finally {
-    btn.disabled = false;
-  }
-}
+    // Task change notification
+    rpc.onNotification('tasks.changed', (evt) => {
+      appendLog('overview-log', `Server push: tasks.changed (${evt.action})`, 'highlight');
+      loadTabularTasks();
+    });
 
-async function changeRole(role) {
-  try {
-    const res = await rpc.call('auth.set_role', { role });
-    const resBox = document.getElementById('admin-result');
-    resBox.textContent = `Роль сессии успешно изменена на: ${res.result.role}`;
-  } catch (err) {
-    console.error(err);
-  }
-}
+    // Cache tag invalidation notification
+    rpc.onNotification('cache.invalidate', (evt) => {
+      appendLog('cache-events-log', `Received cache.invalidate: [${evt.tags.join(', ')}]`, 'success');
+      refreshCacheVersions();
+    });
 
-async function callAdminMethod() {
-  const resBox = document.getElementById('admin-result');
-  resBox.textContent = 'Запрос admin.system_info...';
-  try {
-    const res = await rpc.call('admin.system_info');
-    resBox.textContent = JSON.stringify(res.result, null, 2);
-  } catch (err) {
-    resBox.textContent = `✖ ДОСТУП ЗАПРЕЩЕН (RPCError):\nКод: ${err.code}\nСообщение: ${err.message}`;
-  }
-}
+    // Broadcast community alert
+    rpc.onNotification('community.alert', (data) => {
+      appendLog('broadcast-feed', `[${data.author || 'Socket'}]: ${data.text}`, 'highlight');
+    });
 
-function escapeHtml(text) {
-  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-  return text.replace(/[&<>"']/g, m => map[m]);
-}
-</script>
+    rpc.connect();
 
+    // --- 4. UI INTERACTIVE HANDLERS ---
+
+    function getNow() {
+      return new Date().toLocaleTimeString();
+    }
+
+    function appendLog(elementId, message, className = '') {
+      const container = document.getElementById(elementId);
+      if (!container) return;
+      const item = document.createElement('div');
+      item.className = 'event-item';
+      item.innerHTML = `<span class="event-time">${getNow()}</span><span class="event-msg ${className}">${escapeHtml(message)}</span>`;
+      container.appendChild(item);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Ping
+    async function testPing() {
+      try {
+        const res = await rpc.call('system.ping');
+        appendLog('overview-log', `system.ping -> pong (RTT: ${res.rtt} ms, server: ${res.result.granian})`, 'success');
+      } catch(err) {
+        appendLog('overview-log', `Ping error: ${err.message}`, 'alert');
+      }
+    }
+
+    // System Info
+    async function testSystemInfo(silent = false) {
+      try {
+        const res = await rpc.call('system.info');
+        document.getElementById('sessions-counter').textContent = `Active Sockets: ${res.result.active_sessions_count}`;
+        if (!silent) {
+          appendLog('overview-log', `system.info: Python ${res.result.python_version}, OS: ${res.result.os_platform}, Active Sockets: ${res.result.active_sessions_count}`);
+        }
+      } catch(err) {}
+    }
+
+    // Tabular Tasks
+    async function loadTabularTasks() {
+      try {
+        const res = await rpc.call('tasks.list');
+        const wireBytes = new Blob([res.raw]).size;
+        document.getElementById('wire-tabular-bytes').textContent = wireBytes + ' B';
+        document.getElementById('tabular-wire-preview').textContent = res.raw.substring(0, 160) + (res.raw.length > 160 ? '...' : '');
+
+        const tasks = unpackTabular(res.result);
+        renderTasksTable(tasks);
+
+        const rawJsonString = JSON.stringify(tasks);
+        const rawBytes = new Blob([rawJsonString]).size;
+        document.getElementById('raw-json-bytes').textContent = rawBytes + ' B';
+
+        const savedPct = rawBytes > 0 ? Math.max(0, Math.round((1 - (wireBytes / rawBytes)) * 100)) : 0;
+        document.getElementById('compression-saved-pct').textContent = savedPct + '%';
+      } catch(err) {
+        console.error('Error in loadTabularTasks:', err);
+      }
+    }
+
+    async function loadRawJsonTasks() {
+      try {
+        const res = await rpc.call('tasks.list_raw_json');
+        const wireBytes = new Blob([res.raw]).size;
+        document.getElementById('raw-json-bytes').textContent = wireBytes + ' B (Raw Wire)';
+        appendLog('overview-log', `Requested tasks.list_raw_json: transferred ${wireBytes} bytes`, 'highlight');
+      } catch(err) {
+        console.error(err);
+      }
+    }
+
+    function renderTasksTable(tasks) {
+      const tbody = document.getElementById('task-table-body');
+      tbody.innerHTML = '';
+      if (!tasks || tasks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted)">Task list is empty</td></tr>';
+        return;
+      }
+
+      tasks.forEach(t => {
+        const tr = document.createElement('tr');
+        const priorityBadge = `<span class="badge badge-${t.priority}">${t.priority}</span>`;
+        const titleStyle = t.completed ? 'text-decoration:line-through; color:var(--text-muted);' : '';
+
+        tr.innerHTML = `
+          <td><input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskStatus(${t.id})"></td>
+          <td style="${titleStyle}">${escapeHtml(t.title)}</td>
+          <td>${priorityBadge}</td>
+          <td><button class="btn btn-sm btn-danger-outline" onclick="deleteTaskItem(${t.id})">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function handleCreateTask(e) {
+      e.preventDefault();
+      const titleInput = document.getElementById('task-title-input');
+      const priorityInput = document.getElementById('task-priority-input');
+      const title = titleInput.value.trim();
+      if (!title) return;
+
+      try {
+        await rpc.call('tasks.add', { title, priority: priorityInput.value });
+        titleInput.value = '';
+        appendLog('overview-log', `Created task: "${title}"`, 'success');
+      } catch(err) {
+        alert(err.message || 'Error creating task');
+      }
+    }
+
+    async function toggleTaskStatus(id) {
+      try {
+        await rpc.call('tasks.toggle', { id });
+      } catch(err) {
+        alert(err.message || 'Error updating task');
+      }
+    }
+
+    async function deleteTaskItem(id) {
+      try {
+        await rpc.call('tasks.delete', { id });
+      } catch(err) {
+        alert(err.message || 'Error deleting task');
+      }
+    }
+
+    // Smart Cache
+    async function refreshCacheVersions() {
+      try {
+        const versions = await rpc.call('cache.get_versions');
+        const display = document.getElementById('cache-tags-display');
+        display.innerHTML = '';
+        const keys = Object.keys(versions.result);
+        if (keys.length === 0) {
+          display.innerHTML = 'Version registry is empty or initializing...';
+          return;
+        }
+        keys.forEach(k => {
+          const item = document.createElement('div');
+          item.className = 'event-item';
+          item.innerHTML = `<span style="font-weight:600; color:var(--primary); font-family:var(--font-mono)">${k}:</span> <span style="font-family:var(--font-mono)">v${versions.result[k]}</span>`;
+          display.appendChild(item);
+        });
+      } catch(err) {}
+    }
+
+    async function triggerManualInvalidate(tag) {
+      try {
+        const res = await rpc.call('cache.manual_invalidate', { tags: [tag] });
+        appendLog('cache-events-log', `Manual invalidation of "${tag}" -> new version v${res.result.new_versions[tag]}`, 'highlight');
+      } catch(err) {
+        alert(err.message);
+      }
+    }
+
+    // Streaming
+    async function triggerStreamingJob() {
+      const btn = document.getElementById('btn-run-stream');
+      const progressBar = document.getElementById('stream-progress-bar');
+      const stageLabel = document.getElementById('stream-stage-label');
+      const pctLabel = document.getElementById('stream-pct-label');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Streaming in progress...';
+      progressBar.style.width = '0%';
+      pctLabel.textContent = '0%';
+      stageLabel.textContent = 'Status: Task initiated...';
+
+      try {
+        const finalResult = await rpc.requestStream('stream.heavy_job', {}, (chunk) => {
+          progressBar.style.width = chunk.progress + '%';
+          pctLabel.textContent = chunk.progress + '%';
+          stageLabel.textContent = chunk.message;
+          appendLog('stream-chunks-log', `[Chunk] ${chunk.progress}%: ${chunk.message}`, 'highlight');
+        });
+
+        progressBar.style.width = '100%';
+        pctLabel.textContent = '100%';
+        stageLabel.textContent = finalResult.result.message;
+        appendLog('stream-chunks-log', `[Final Result]: ${finalResult.result.summary}`, 'success');
+      } catch(err) {
+        appendLog('stream-chunks-log', `Streaming error: ${err.message}`, 'alert');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Run Heavy Job (1.5s)';
+      }
+    }
+
+    // Reverse RPC
+    async function triggerReverseRpcTest() {
+      appendLog('reverse-rpc-log', 'Sending reverse_rpc.ask_client to server...');
+      try {
+        const res = await rpc.call('reverse_rpc.ask_client');
+        appendLog('reverse-rpc-log', `Server successfully queried browser! Response: ${JSON.stringify(res.result.client_payload)}`, 'success');
+      } catch(err) {
+        appendLog('reverse-rpc-log', `Error: ${err.message}`, 'alert');
+      }
+    }
+
+    // Broadcast
+    async function sendBroadcastMsg() {
+      const input = document.getElementById('broadcast-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      try {
+        await rpc.call('broadcast.send_announcement', { text });
+        input.value = '';
+      } catch(err) {
+        alert(err.message);
+      }
+    }
+
+    // File Upload
+    async function handleFileUpload(file) {
+      if (!file) return;
+      appendLog('files-upload-log', `Initiating file stream: ${file.name} (${file.size} bytes)...`);
+
+      try {
+        const resp = await fetch(`/upload?filename=${encodeURIComponent(file.name)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream'
+          },
+          body: file
+        });
+
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+        appendLog('files-upload-log', `File written to storage! Size: ${data.bytes_written || data.size || file.size} bytes, SHA256: ${data.sha256 ? data.sha256.substring(0, 16) + '...' : 'OK'}`, 'success');
+      } catch(err) {
+        appendLog('files-upload-log', `Upload error: ${err.message}`, 'alert');
+      }
+    }
+
+    // Role switcher
+    async function switchRole(roleName) {
+      document.getElementById('top-role-select').value = roleName;
+      document.getElementById('rbac-role-select').value = roleName;
+
+      try {
+        const res = await rpc.call('auth.set_role', { role: roleName });
+        appendLog('rbac-result-log', `Session role changed to "${res.result.role}"`, 'highlight');
+      } catch(err) {
+        alert(err.message);
+      }
+    }
+
+    // RBAC check
+    async function testAdminRbacMethod() {
+      try {
+        const res = await rpc.call('admin.system_info');
+        appendLog('rbac-result-log', `Access GRANTED (admin): PID=${res.result.secret_system_data.pid}, active sockets=${res.result.secret_system_data.active_sockets}`, 'success');
+      } catch(err) {
+        appendLog('rbac-result-log', `ACCESS DENIED (Code: ${err.code}): ${err.message}`, 'alert');
+      }
+    }
+
+    // SEO Test
+    async function testBotDetection() {
+      const select = document.getElementById('seo-ua-select');
+      const ua = select.value;
+
+      try {
+        const res = await rpc.call('seo.simulate_bot', { user_agent: ua });
+        const isBot = res.result.is_bot;
+        const msg = isBot 
+          ? `Detected CRAWLER BOT (is_search_bot: ${res.result.is_search_bot}) -> ${res.result.recommendation}`
+          : `Standard Browser -> ${res.result.recommendation}`;
+        appendLog('seo-result-log', msg, isBot ? 'alert' : 'success');
+      } catch(err) {
+        appendLog('seo-result-log', `Error: ${err.message}`, 'alert');
+      }
+    }
+
+    // Code tabs switching
+    function switchCodeTab(btn, targetId) {
+      const tabsContainer = btn.closest('.code-tabs');
+      const buttons = tabsContainer.querySelectorAll('.code-tab-btn');
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const inspector = btn.closest('.code-inspector');
+      const views = inspector.querySelectorAll('.code-view');
+      views.forEach(v => v.style.display = 'none');
+
+      const target = inspector.querySelector(`#${targetId}`);
+      if (target) target.style.display = 'block';
+    }
+
+    // Copy code button
+    function copyCode(btn) {
+      const inspector = btn.closest('.code-inspector');
+      const activeView = inspector.querySelector('.code-view:not([style*="display: none"])');
+      if (activeView) {
+        navigator.clipboard.writeText(activeView.textContent).then(() => {
+          const original = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = original, 1500);
+        });
+      }
+    }
+
+    // Drag and drop setup
+    const dropzone = document.getElementById('file-dropzone');
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--primary)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--border-strong)'; });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--border-strong)';
+      if (e.dataTransfer.files.length > 0) {
+        handleFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+
+    // Active sidebar link on scroll
+    window.addEventListener('scroll', () => {
+      const sections = document.querySelectorAll('.feature-card');
+      const navLinks = document.querySelectorAll('.nav-link');
+      let currentId = '';
+
+      sections.forEach(sec => {
+        const top = sec.offsetTop - 120;
+        if (window.scrollY >= top) {
+          currentId = sec.getAttribute('id');
+        }
+      });
+
+      if (currentId) {
+        navLinks.forEach(link => {
+          if (link.getAttribute('href') === `#${currentId}`) {
+            link.classList.add('active');
+          } else {
+            link.classList.remove('active');
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>

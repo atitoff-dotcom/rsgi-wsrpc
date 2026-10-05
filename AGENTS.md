@@ -12,10 +12,11 @@
 - **Протокол:** Симметричный **JSON-RPC 2.0 (WSRPC)** поверх постоянного WebSocket-соединения + опциональный HTTP.
 - **Сжатие данных:** Табличный формат **RFC 0002 (Tabular Data Compression)** — экономит 40–70% трафика в списках.
 - **Безопасность:** По умолчанию гостям разрешены только методы `login.*`. Доступ к остальным требует авторизации или явного флага `public=True`.
+- **Эталонный пример:** Живой интерактивный стенд со всеми плагинами находится в [examples/showcase](file:///home/alex/rsgi-wsrpc/examples/showcase).
 
 ---
 
-## 2. Быстрый старт: Минимальное приложение (`server.py`)
+## 2. Быстрый старт: Приложение (`server.py`)
 
 ```python
 import os
@@ -81,10 +82,10 @@ async def create_item(session, title: str, count: int = 1):
 ```
 
 ### 3.2. Сигнатуры хендлеров (поддерживаются все варианты):
-1. `async def fn(session, params: dict)` — сырой доступ к параметрам.
+1. `async def fn(session, params: dict)` — прямой доступ к объекту сессии и словарю параметров.
 2. `async def fn(session, title: str, priority: int = 1)` — авто-маппинг kwargs + `session`.
-3. `async def fn(title: str, priority: int = 1)` — только именованные параметры.
-4. `async def fn()` — без параметров.
+3. `async def fn(title: str, priority: int = 1)` — только именованные параметры из `params`.
+4. `async def fn()` — метод без аргументов.
 
 ### 3.3. Обработка ошибок (JSON-RPC 2.0 Error)
 Для возврата ошибки клиенту используйте `raise RPCError(code, message)`:
@@ -102,10 +103,10 @@ from rsgi_wsrpc.core.tabular import tabular_response
 @rpc_method("users.get_all")
 @tabular_response(fields=["id", "username", "email", "role"])
 async def get_users():
-    # Возвращает список словарей или объектов с to_dict()
+    # Возвращает список словарей или ORM-моделей
     return await fetch_users_from_db()
 ```
-*Эффект:* Превращает `[{"id":1, ...}, {"id":2, ...}]` в `{"$tabular": true, "fields": [...], "rows": [[1, ...], [2, ...]]}`. Клиентский TS/JS SDK распаковывает это прозрачно на лету.
+*Эффект:* Превращает `[{"id":1, ...}, {"id":2, ...}]` в `{"$tabular": true, "fields": [...], "rows": [[1, ...], [2, ...]]}`. Клиентский TS/JS SDK распаковывает это прозрачно на лету через `unpackTabular()`.
 
 ---
 
@@ -121,37 +122,71 @@ async def delete_topic(topic_id: int, category_id: int):
     # Теги со строковыми шаблонами разрешаются автоматически из params/kwargs и result
     return {"status": "ok"}
 ```
+Сервер монотонно увеличивает версию тегов в памяти/БД и рассылает сокетам событие `cache.invalidate`.
 
 ---
 
-## 6. Рассылки реального времени (Broadcast)
+## 6. Multi-return Потоковый Стриминг (`stream: true`)
 
-Неблокирующая рассылка уведомлений всем подключенным сокетам с оверхедом O(1):
+Для длительных задач отправляйте промежуточный прогресс без блокировки сокета:
+```python
+from rsgi_wsrpc.core.session import current_rpc_id_ctx
+
+@app.rpc("analytics.generate")
+async def generate_report(session):
+    rpc_id = current_rpc_id_ctx.get()
+    
+    # Отправка промежуточных чанков прогресса
+    await session.send_stream_chunk(rpc_id, {"progress": 30, "step": "Сканирование БД"})
+    await session.send_stream_chunk(rpc_id, {"progress": 70, "step": "Сжатие"})
+    
+    # Финальный ответ завершает RPC-запрос
+    return {"progress": 100, "report_url": "/reports/12.pdf"}
+```
+
+---
+
+## 7. Полнодуплексный Reverse RPC (Сервер &rarr; Клиент)
+
+WSRPC симметричен: сервер может сам отправить запрос клиенту и дождаться ответа:
+```python
+@app.rpc("client.inspect")
+async def inspect_client(session):
+    # Сервер отправляет JSON-RPC запрос в браузер
+    client_response = await session.send_request("client.get_env", timeout=3.0)
+    return {"browser_info": client_response}
+```
+
+---
+
+## 8. Рассылки реального времени (Broadcast)
+
+Неблокирующая O(1) рассылка уведомлений всем подключенным сокетам:
 ```python
 from rsgi_wsrpc.plugins.broadcast import broadcast_notification
 
-# Сериализация происходит один раз в Rust/C-память, затем пушится во все сокеты
+# Сериализация происходит 1 раз в память, после чего фрейм отправляется всем сокетам
 await broadcast_notification("order.updated", {"order_id": 105, "status": "shipped"})
 ```
 
 ---
 
-## 7. Загрузка файлов (Двухфазный коммит 2PC)
+## 9. Загрузка файлов (Двухфазный коммит 2PC)
 
-Загрузка больших файлов (до сотен гигабайт) работает через Granian HTTP стриминг:
-1. `POST /upload?folder_hash=...` — чанки пишутся сразу на диск без буферизации в RAM.
-2. Проверка прав загрузки: эндпоинт `/auth-check-upload` проверяет JWT токен в заголовке `Authorization: Bearer <JWT>`.
-3. Фиксация в постоянное хранилище: вызов WSRPC `files.commit(folder_hash="...")`.
+Загрузка больших файлов без буферизации в RAM через RSGI HTTP стриминг:
+1. `POST /upload?folder_hash=...` — чанки пишутся сразу на диск с O(1) памяти.
+2. Проверка прав: эндпоинт `/auth-check-upload` валидирует JWT в заголовке `Authorization: Bearer <JWT>`.
+3. Фиксация: WSRPC метод `files.commit(folder_hash="...")` атомарно переносит файлы в постоянное хранилище.
 
 ---
 
-## 8. Универсальный реактивный CRUD (`rsgi_wsrpc.plugins.crud`)
+## 10. Универсальный реактивный CRUD (`rsgi_wsrpc.plugins.crud`)
 
-Управление моделями базы данных, авто-генерация API и встроенный веб-интерфейс:
-1. Авто-сканирование моделей:
+Авто-генерация API и встроенная панель управления на `/crud`:
+1. Регистрация моделей:
    ```python
-   import rsgi_wsrpc.plugins.crud as crud
-   crud.ModelRegistry.auto_discover(Base)
+   from rsgi_wsrpc.plugins.crud import ModelRegistry
+   ModelRegistry.register(Task)
    ```
 2. Декларативное описание модели (`class Crud:`):
    ```python
@@ -167,11 +202,28 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
            protected = {"owner_id"}
    ```
 3. Контракт методов WSRPC: `crud.schema`, `crud.list` ($tabular), `crud.get`, `crud.create`, `crud.update_cell`, `crud.bulk_update`, `crud.delete`.
-4. Веб-интерфейс доступен из коробки на `/crud` и `/admin`.
 
 ---
 
-## 9. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
+## 11. SEO & Dynamic Rendering (`rsgi_wsrpc.plugins.seo`)
+
+Автоматическое определение краулеров и отдача SSR HTML с мета-тегами:
+```python
+from rsgi_wsrpc.plugins.seo import bot_page, render_seo_page
+
+@bot_page("/articles/{slug}")
+async def article_seo(slug: str):
+    article = await get_article(slug)
+    return render_seo_page(
+        title=article.title,
+        description=article.summary,
+        og_image=article.cover_url
+    )
+```
+
+---
+
+## 12. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
 
 1. ❌ **НЕ ИМПОРТИРУЙТЕ `fastapi`, `starlette` или ASGI-модули.**
    - Сервер работает на **Granian RSGI**, где `scope.proto` — `"http"` или `"websocket"`.

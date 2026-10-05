@@ -4,15 +4,15 @@
 # ==============================================================================
 set -e
 
-# Переход в директорию скрипта
+# Change to script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "============================================================"
-echo " 🚀 Запуск демонстрационного сервера rsgi-wsrpc Showcase"
+echo " 🚀 [rsgi-wsrpc] Starting Showcase Demo Server"
 echo "============================================================"
 
-# Поиск интерпретатора Python 3.11+
+# Locate Python 3.11+
 PYTHON_BIN=""
 for cmd in python3 python python3.12 python3.11; do
     if command -v "$cmd" >/dev/null 2>&1; then
@@ -27,32 +27,31 @@ for cmd in python3 python python3.12 python3.11; do
 done
 
 if [ -z "$PYTHON_BIN" ]; then
-    echo "❌ Ошибка: Не найден Python 3.11 или новее. Установите Python 3.11+."
+    echo "❌ Error: Python 3.11+ not found. Please install Python from python.org."
     exit 1
 fi
 
-echo "✔ Найден Python: $($PYTHON_BIN --version) ($PYTHON_BIN)"
+echo "✔ Found Python: $($PYTHON_BIN --version) ($PYTHON_BIN)"
 
-# Проверка или создание виртуального окружения
+# Check or create virtual environment
 VENV_DIR="$SCRIPT_DIR/.venv"
 if [ ! -d "$VENV_DIR" ]; then
-    echo "⚙ Создание виртуального окружения в $VENV_DIR..."
+    echo "⚙ Creating virtual environment in $VENV_DIR..."
     "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
-# Активация venv
+# Activate venv
 source "$VENV_DIR/bin/activate"
 
-# Установка зависимостей
-echo "📦 Проверка и установка зависимостей..."
+# Install dependencies from PyPI
+echo "📦 Checking and installing dependencies from PyPI..."
 python -m pip install --quiet --upgrade pip
-python -m pip install --quiet -e "$SCRIPT_DIR/../.."
-python -m pip install --quiet -r "$SCRIPT_DIR/requirements.txt"
+python -m pip install -r "$SCRIPT_DIR/requirements.txt"
 
 echo "============================================================"
-echo " 🌐 Сервер запускается..."
-echo " Откройте в браузере: http://127.0.0.1:8080"
+echo " 🌐 Server is starting..."
+echo " Open in browser: http://127.0.0.1:8080"
 echo "============================================================"
 
-# Запуск сервера
-exec python "$SCRIPT_DIR/server.py"
+# Run server
+exec python "$SCRIPT_DIR/server.py" "$@"

@@ -157,7 +157,7 @@ class RsgiWsrpcApp:
             await self._handle_http(scope, proto)
             return
 
-        if proto_type == "websocket":
+        if proto_type in ("websocket", "ws"):
             await self._handle_websocket(scope, proto)
             return
 
@@ -195,9 +195,13 @@ class RsgiWsrpcApp:
 
         # 3. Маршрутизация по зарегистрированным HTTP_ROUTES
         for route_path, methods, handler in HTTP_ROUTES:
-            if path == route_path and method in methods:
-                await handler(scope, proto)
-                return
+            if method in methods:
+                if path == route_path:
+                    await handler(scope, proto)
+                    return
+                elif route_path.endswith("/*") and path.startswith(route_path[:-1]):
+                    await handler(scope, proto)
+                    return
 
         # 4. Отдача index.html на корневой GET /
         if method == "GET" and path == "/" and self.index_file and os.path.exists(self.index_file):

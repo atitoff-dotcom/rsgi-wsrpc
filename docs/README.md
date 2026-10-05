@@ -8,13 +8,13 @@
 ## 🧭 Table of Contents
 1. [Core Philosophy & Manifesto](#-core-philosophy--manifesto)
 2. [Architecture: Core + Plugins + Application](#-architecture-core--plugins--application)
-   * [Architecture for Beginners with Diagrams (architecture_for_beginners.md)](architecture_for_beginners.md)
+   * [Architecture for Beginners with Diagrams (docs/architecture_for_beginners.md)](docs/architecture_for_beginners.md)
    * [Recommended Project Structure (Directory Tree)](#-recommended-project-structure-directory-tree)
 3. [Comparison: rsgi-wsrpc vs Django vs FastAPI](#-comparison-rsgi-wsrpc-vs-django-vs-fastapi)
 4. [🤖 AI-Native: Token-Efficient & Purpose-Built for LLMs](#-ai-native-token-efficient--purpose-built-for-llms)
 5. [Quickstart in 60 Seconds](#-quickstart-in-60-seconds)
 6. [Core Network Engine](#-core-network-engine)
-   * [Complete Core Developer Guide (core.md)](core.md)
+   * [Complete Core Developer Guide (docs/core.md)](docs/core.md)
 7. [Official System Plugins](#-official-system-plugins)
    * [Database Plugin (db)](#1-database-plugin-pluginsdb)
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
@@ -62,6 +62,10 @@ The architecture enforces a strict unidirectional dependency hierarchy (Clean Ar
 │   [ Plugin: DB ]        [ Plugin: Auth ]       [ Plugin: Files ]        │
 │   Async SQLAlchemy 2.0  Users, JWT,            2PC file streaming,      │
 │   SQLite / PostgreSQL   roles and permissions  registry & Nginx offload │
+│                                                                         │
+│   [ Plugin: CRUD ]      [ Plugin: SEO ]        [ Plugin: Smart Cache ]  │
+│   Reactive CRUD, RLS,   Dynamic Rendering,     Reactive event-driven    │
+│   Svelte 5 SPA Admin    Search engine crawlers feedback cache (0 ms)    │
 │                                                                         │
 │   [ Domain Plugins: Forum, Billing, Notifications, Analytics... ]       │
 └────────────────────────────────────┬────────────────────────────────────┘
@@ -135,7 +139,7 @@ my_project/
 ├── client/                         # 💻 CLIENT LIBRARIES
 │   └── wsrpc.ts                    # Official TypeScript/JavaScript WSRPC client
 │
-├──                            # 📚 Framework Documentation (EN)
+├── docs/                           # 📚 Framework Documentation (EN)
 │   ├── readme.md
 │   ├── core.md                     # Comprehensive Core developer guide
 │   └── files.md                    # Two-phase file upload guide (2PC)
@@ -340,7 +344,7 @@ await client.callStream('task.run_long', {}, (chunk) => {
 
 ## ⚙️ Core Network Engine
 
-> 📖 **For the complete technical manual with code examples, see: [core.md](core.md)**.
+> 📖 **For the complete technical manual with code examples, see: [docs/core.md](docs/core.md)**.
 
 The network core resides in the `core/` directory and exposes the following building blocks:
 
@@ -356,7 +360,7 @@ The network core resides in the `core/` directory and exposes the following buil
   * `@http_route(path, methods)` decorator to register raw RSGI HTTP handlers.
   * High-throughput file streams, webhooks, and health checks.
 
-* **[core/tabular.py](tabular_compression.md)**:
+* **[core/tabular.py](docs/tabular_compression.md)**:
   * Deterministic tabular payload compression (RFC 0002, `pack_tabular`, `@tabular_response`).
   * Cuts 50–70% of network traffic by transmitting property schemas once and packing records into a 2D matrix.
   * Direct SQL tuple optimization bypasses dictionary allocations, minimizing Python GC overhead.
@@ -406,7 +410,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 3. Two-Phase File Upload Plugin (`plugins/files`)
-* Comprehensive architecture: see **[files.md](files.md)**.
+* Comprehensive architecture: see **[docs/files.md](docs/files.md)**.
 * **Two-Phase Commit Workflow**:
   1. Client initiates upload transaction: server provisions isolated `/tmp/app_uploads/<folder_hash>/`.
   2. Client streams files via `POST /upload`. Bytes stream directly to disk without memory buffering.
@@ -418,7 +422,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 4. Smart Reactive Cache Plugin (`plugins/smart_cache`)
-* Comprehensive architecture: see **[smart_cache.md](smart_cache.md)** and **[RFC 0001](rfc/0001-smart-cache.md)**.
+* Comprehensive architecture: see **[docs/smart_cache.md](docs/smart_cache.md)** and **[RFC 0001](rfc/0001-smart-cache.md)**.
 * **0 ms Latency Principle & Push Invalidation**:
   * Instant screen rendering from L1 RAM (or L2 IndexedDB/localStorage) with zero network wait.
   * Server automatically tracks mutations and pushes `cache.invalidate` impulses or targeted `cache.patch` via `@invalidates(tags=...)`.
@@ -428,7 +432,7 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 ---
 
 ### 5. Modular Backend Test Framework (`tests/`)
-* Comprehensive guide: see **[testing.md](testing.md)**.
+* Comprehensive guide: see **[docs/testing.md](docs/testing.md)**.
 * **Client-Perspective Black-Box Testing**:
   * Validates the backend exactly as a real frontend client interacts with it (over WebSocket WSRPC and HTTP).
   * `PersonaManager`: pre-authenticated sessions (`admin`, `user`, `guest`) with automatic local database seeding and RLS bypass.
@@ -526,7 +530,7 @@ rpc.registerMethod('ui.confirm', async (params) => {
 });
 ```
 
-> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [core.md](core.md#8-typescriptjavascript-client-clientwsrpcts)**.
+> 📖 **For in-depth UI framework integrations (Svelte, React, Vue), error handling, and unsubscription patterns, see: [docs/core.md](docs/core.md#8-typescriptjavascript-client-clientwsrpcts)**.
 
 ---
 
