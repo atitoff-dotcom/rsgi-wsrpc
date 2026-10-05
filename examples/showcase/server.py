@@ -30,40 +30,6 @@ from rsgi_wsrpc.plugins.db import engine, Base, async_session
 from rsgi_wsrpc.plugins.smart_cache import version_registry
 from rsgi_wsrpc.plugins.crud import ModelRegistry
 
-# Compatibility patch 1: Granian RSGI passes scope.proto == "ws"
-_orig_rsgi_call = RsgiWsrpcApp.__call__
-async def _compatible_rsgi_call(self, scope, proto):
-    if getattr(scope, "proto", "") == "ws":
-        await self._handle_websocket(scope, proto)
-        return
-    return await _orig_rsgi_call(self, scope, proto)
-
-RsgiWsrpcApp.__call__ = _compatible_rsgi_call
-
-# Compatibility patch 2: PyPI 0.4.0 HTTP wildcard & trailing slash routing for /crud/* and /admin/*
-_orig_handle_http = RsgiWsrpcApp._handle_http
-async def _compatible_handle_http(self, scope, proto):
-    method = getattr(scope, "method", "GET")
-    path = getattr(scope, "path", "/")
-
-    from rsgi_wsrpc.core.router import HTTP_ROUTES
-    for route_path, methods, handler in HTTP_ROUTES:
-        if method in methods:
-            if path == route_path:
-                await handler(scope, proto)
-                return
-            if route_path.endswith("/*"):
-                prefix = route_path[:-1]  # e.g. "/crud/"
-                if path.startswith(prefix) or path == route_path[:-2]:  # "/crud/" or "/crud"
-                    await handler(scope, proto)
-                    return
-            if path.rstrip("/") == route_path.rstrip("/"):
-                await handler(scope, proto)
-                return
-
-    return await _orig_handle_http(self, scope, proto)
-
-RsgiWsrpcApp._handle_http = _compatible_handle_http
 
 # Static directory and SQLite DB path
 PUBLIC_DIR = os.path.join(SHOWCASE_DIR, "public")
