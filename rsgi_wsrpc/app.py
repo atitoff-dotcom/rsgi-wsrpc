@@ -109,6 +109,7 @@ class RsgiWsrpcApp:
 
         self.enable_seo = enable_seo
         self._session_counter = count()
+        self._on_connect_callbacks: List[Callable] = []
 
         # Граниан связывает __rsgi_init__ и __rsgi_del__ на самом объекте приложения
         self.__rsgi_init__ = self._rsgi_init_handler
@@ -131,6 +132,11 @@ class RsgiWsrpcApp:
     def on_shutdown(self, func: Callable):
         """Регистрирует хук завершения приложения."""
         return on_shutdown(func)
+
+    def on_connect(self, func: Callable):
+        """Регистрирует асинхронный хук при подключении новой WebSocket-сессии (session: JsonRpcSession)."""
+        self._on_connect_callbacks.append(func)
+        return func
 
     # --- ЖИЗНЕННЫЙ ЦИКЛ RSGI ---
 
@@ -281,7 +287,15 @@ class RsgiWsrpcApp:
             if client and isinstance(client, (list, tuple)) and len(client) > 0:
                 client_ip = str(client[0])
 
-            session = JsonRpcSession(ws, session_id, ip=client_ip)
+            session = JsonRpcSession(ws, session_id, ip=client_ip, scope=scope)
+            for cb in self._on_connect_callbacks:
+                try:
+                    if inspect.iscoroutinefunction(cb):
+                        await cb(session)
+                    else:
+                        cb(session)
+                except Exception as e:
+                    logger.error(f"[RsgiWsrpcApp on_connect] Ошибка в хуке подключения: {e}", exc_info=True)
             await session.start()
         except asyncio.CancelledError:
             pass

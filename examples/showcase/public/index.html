@@ -638,16 +638,17 @@
           Active Sockets: 1
         </div>
 
-        <div style="display:flex; align-items:center; gap:6px;">
-          <span style="font-size:12px; color:var(--text-secondary); font-weight:500">Role:</span>
-          <select id="top-role-select" onchange="switchRole(this.value)">
-            <option value="guest">Guest</option>
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
+        <div id="auth-status-container" style="display:flex; align-items:center; gap:8px;">
+          <div id="user-badge" class="status-pill" style="font-size:12px; display:flex; align-items:center; gap:6px;">
+            <span id="user-icon">👥</span>
+            <span id="user-name">Гость</span>
+            <span id="user-role-badge" style="background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase;">guest</span>
+          </div>
+          <button id="btn-login-modal" onclick="openLoginModal()" class="btn btn-default btn-sm" style="font-size:12px;">🔑 Войти</button>
+          <button id="btn-logout" onclick="performLogout()" class="btn btn-default btn-sm" style="font-size:12px; display:none;">Выйти</button>
         </div>
 
-        <a href="/crud" target="_blank" class="btn btn-default btn-sm">🗄️ Open CRUD UI</a>
+        <a href="/crud" target="_blank" id="btn-open-crud" class="btn btn-default btn-sm" title="Для доступа к CRUD требуется роль администратора">🗄️ Open CRUD UI</a>
       </div>
     </div>
   </header>
@@ -1429,6 +1430,7 @@ rpc.onNotification(<span class="str">'community.alert'</span>, (data) => {
           loadTabularTasks();
           refreshCacheVersions();
           testSystemInfo(true);
+          checkAuthStatus();
         };
 
         this.ws.onclose = () => {
@@ -1829,17 +1831,149 @@ rpc.onNotification(<span class="str">'community.alert'</span>, (data) => {
       }
     }
 
-    // Role switcher
-    async function switchRole(roleName) {
-      document.getElementById('top-role-select').value = roleName;
-      document.getElementById('rbac-role-select').value = roleName;
+    // --- AUTHENTICATION & ROLES ---
+    let currentAuth = { authenticated: false, username: "guest_user", role: "guest", name: "Гость" };
+
+    async function checkAuthStatus() {
+      try {
+        const res = await rpc.call('auth.whoami');
+        if (res && res.result) {
+          updateAuthUI(res.result);
+        }
+      } catch(e) {}
+    }
+
+    function updateAuthUI(auth) {
+      currentAuth = auth;
+      const isAuth = Boolean(auth.authenticated);
+      const role = auth.role || 'guest';
+      const name = auth.name || auth.username || (role === 'admin' ? 'Администратор' : (role === 'user' ? 'Пользователь' : 'Гость'));
+
+      const userIcon = document.getElementById('user-icon');
+      const userName = document.getElementById('user-name');
+      const roleBadge = document.getElementById('user-role-badge');
+      const btnLogin = document.getElementById('btn-login-modal');
+      const btnLogout = document.getElementById('btn-logout');
+      const crudBtn = document.getElementById('btn-open-crud');
+      const rbacSelect = document.getElementById('rbac-role-select');
+
+      if (userName) userName.textContent = isAuth ? name : 'Гость';
+      if (roleBadge) {
+        roleBadge.textContent = role;
+        if (role === 'admin') {
+          roleBadge.style.background = 'rgba(239, 68, 68, 0.25)';
+          roleBadge.style.color = '#f87171';
+        } else if (role === 'user') {
+          roleBadge.style.background = 'rgba(59, 130, 246, 0.25)';
+          roleBadge.style.color = '#60a5fa';
+        } else {
+          roleBadge.style.background = 'rgba(255, 255, 255, 0.1)';
+          roleBadge.style.color = 'inherit';
+        }
+      }
+      if (userIcon) userIcon.textContent = role === 'admin' ? '🛡️' : (role === 'user' ? '👤' : '👥');
+
+      if (btnLogin) btnLogin.style.display = isAuth ? 'none' : 'inline-flex';
+      if (btnLogout) btnLogout.style.display = isAuth ? 'inline-flex' : 'none';
+
+      if (crudBtn) {
+        if (role === 'admin') {
+          crudBtn.classList.remove('btn-default');
+          crudBtn.classList.add('btn-primary');
+          crudBtn.textContent = '🗄️ Open CRUD UI (Admin)';
+          crudBtn.title = 'Доступ администратора активен';
+        } else {
+          crudBtn.classList.remove('btn-primary');
+          crudBtn.classList.add('btn-default');
+          crudBtn.textContent = '🗄️ Open CRUD UI';
+          crudBtn.title = 'Для доступа к CRUD требуется роль администратора';
+        }
+      }
+
+      if (rbacSelect) rbacSelect.value = role;
+    }
+
+    function openLoginModal(prefillRole = '') {
+      const modal = document.getElementById('showcase-login-modal');
+      if (!modal) return;
+      document.getElementById('login-modal-error').style.display = 'none';
+      if (prefillRole === 'admin') {
+        document.getElementById('modal-username').value = 'admin';
+        document.getElementById('modal-password').value = 'admin123';
+      } else if (prefillRole === 'user') {
+        document.getElementById('modal-username').value = 'user';
+        document.getElementById('modal-password').value = 'user123';
+      } else {
+        document.getElementById('modal-username').value = '';
+        document.getElementById('modal-password').value = '';
+      }
+      modal.style.display = 'flex';
+    }
+
+    function closeLoginModal() {
+      const modal = document.getElementById('showcase-login-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function submitLoginModal() {
+      const u = document.getElementById('modal-username').value.trim();
+      const p = document.getElementById('modal-password').value;
+      const errBox = document.getElementById('login-modal-error');
+
+      if (!u || !p) {
+        errBox.textContent = 'Пожалуйста, введите логин и пароль';
+        errBox.style.display = 'block';
+        return;
+      }
 
       try {
-        const res = await rpc.call('auth.set_role', { role: roleName });
-        appendLog('rbac-result-log', `Session role changed to "${res.result.role}"`, 'highlight');
+        const res = await rpc.call('auth.login', { username: u, password: p });
+        if (res && res.result && res.result.success) {
+          // Устанавливаем cookie для перехода в CRUD
+          document.cookie = `rsgi_crud_session=${res.result.token}; Path=/; SameSite=Lax`;
+          document.cookie = `rsgi_session=${res.result.token}; Path=/; SameSite=Lax`;
+          updateAuthUI({
+            authenticated: true,
+            username: res.result.username,
+            role: res.result.role,
+            name: res.result.name
+          });
+          closeLoginModal();
+          appendLog('rbac-result-log', `Авторизован как "${res.result.username}" (${res.result.role.toUpperCase()})`, 'success');
+        }
+      } catch(err) {
+        errBox.textContent = err.message || 'Ошибка авторизации';
+        errBox.style.display = 'block';
+      }
+    }
+
+    async function performLogout() {
+      try {
+        await rpc.call('auth.logout');
+        document.cookie = 'rsgi_crud_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        document.cookie = 'rsgi_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        updateAuthUI({
+          authenticated: false,
+          username: 'guest_user',
+          role: 'guest',
+          name: 'Гость'
+        });
+        appendLog('rbac-result-log', 'Выполнен выход. Текущая роль: GUEST', 'highlight');
       } catch(err) {
         alert(err.message);
       }
+    }
+
+    async function switchRole(roleName) {
+      if (roleName === 'admin') {
+        openLoginModal('admin');
+        return;
+      }
+      if (roleName === 'user') {
+        openLoginModal('user');
+        return;
+      }
+      await performLogout();
     }
 
     // RBAC check
@@ -1933,5 +2067,37 @@ rpc.onNotification(<span class="str">'community.alert'</span>, (data) => {
       }
     });
   </script>
+  <!-- SHOWCASE LOGIN MODAL -->
+  <div id="showcase-login-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:16px;">
+    <div style="background:#111827; border:1px solid #1f2937; border-radius:16px; padding:28px; width:100%; max-width:400px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.6); color:#f9fafb;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <h3 style="font-size:18px; font-weight:700; margin:0;">🔐 Авторизация пользователя</h3>
+        <button type="button" onclick="closeLoginModal()" style="margin-left:auto; background:none; border:none; color:#9ca3af; font-size:20px; cursor:pointer;">✕</button>
+      </div>
+
+      <div id="login-modal-error" style="display:none; background:rgba(225,29,72,0.15); border:1px solid rgba(225,29,72,0.3); color:#f43f5e; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:14px;"></div>
+
+      <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
+        <div>
+          <label style="display:block; font-size:11px; font-weight:600; text-transform:uppercase; color:#9ca3af; margin-bottom:4px;">Логин</label>
+          <input type="text" id="modal-username" placeholder="admin или user" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #334155; background:#0f172a; color:#f9fafb; font-size:13px; outline:none;" />
+        </div>
+        <div>
+          <label style="display:block; font-size:11px; font-weight:600; text-transform:uppercase; color:#9ca3af; margin-bottom:4px;">Пароль</label>
+          <input type="password" id="modal-password" placeholder="••••••••" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid #334155; background:#0f172a; color:#f9fafb; font-size:13px; outline:none;" onkeydown="if(event.key==='Enter') submitLoginModal()" />
+        </div>
+      </div>
+
+      <button type="button" onclick="submitLoginModal()" class="btn btn-primary" style="width:100%; padding:10px; font-size:13px; font-weight:600; justify-content:center; margin-bottom:14px;">Войти в систему</button>
+
+      <div style="border-top:1px dashed #374151; padding-top:12px; font-size:11px; color:#9ca3af; text-align:center;">
+        <span style="font-weight:600;">Быстрый выбор для тестов:</span>
+        <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+          <button type="button" onclick="openLoginModal('admin'); submitLoginModal();" class="btn btn-default btn-sm" style="font-size:11px;">🛡️ Войти как Admin</button>
+          <button type="button" onclick="openLoginModal('user'); submitLoginModal();" class="btn btn-default btn-sm" style="font-size:11px;">👤 Войти как User</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

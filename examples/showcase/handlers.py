@@ -304,7 +304,109 @@ async def send_announcement(session, params: dict):
     return {"sent": True, "recipients_count": len(ACTIVE_SESSIONS_SET)}
 
 
-# --- 7. ROLES & RBAC ---
+# --- 7. ROLES & RBAC (DEMO AUTH) ---
+
+DEMO_USERS = {
+    "admin": {"password": "admin123", "role": "admin", "name": "Администратор"},
+    "user": {"password": "user123", "role": "user", "name": "Пользователь"},
+}
+
+DEMO_TOKENS: Dict[str, dict] = {}
+
+
+def authenticate_credentials(username: str, password: str) -> Optional[dict]:
+    """Validates login/password against showcase demo credentials."""
+    u = (username or "").strip().lower()
+    if u in DEMO_USERS:
+        expected = DEMO_USERS[u]
+        if password == expected["password"] or password == u:
+            return {"username": u, "role": expected["role"], "name": expected["name"]}
+    return None
+
+
+@rpc_method("auth.login", public=True)
+async def auth_login(session, params: dict):
+    """
+    Аутентификация с проверкой логина и пароля.
+    Доступны demo-аккаунты: admin / admin123 и user / user123.
+    """
+    username = params.get("username", "")
+    password = params.get("password", "")
+
+    user_info = authenticate_credentials(username, password)
+    if not user_info:
+        raise RPCError(-32602, "Неверный логин или пароль (используйте admin/admin123 или user/user123)")
+
+    transport = current_transport_ctx.get() or session
+    sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
+
+    import secrets
+    token = secrets.token_hex(24)
+    DEMO_TOKENS[token] = user_info
+
+    # Если логинится администратор, регистрируем его также в сессиях CRUD-плагина
+    if user_info["role"] == "admin":
+        from rsgi_wsrpc.plugins.crud import create_crud_session
+        create_crud_session(user_info)
+
+    demo_data = DemoSessionData(
+        username=user_info["username"],
+        role=user_info["role"],
+        session_id=sid
+    )
+
+    if hasattr(transport, "data"):
+        transport.data = demo_data
+    if hasattr(session, "data"):
+        session.data = demo_data
+
+    return {
+        "success": True,
+        "token": token,
+        "username": user_info["username"],
+        "name": user_info["name"],
+        "role": user_info["role"],
+    }
+
+
+@rpc_method("auth.logout", public=True)
+async def auth_logout(session, params: dict = None):
+    """Выход из аккаунта и сброс роли до Guest."""
+    token = (params or {}).get("token")
+    if token and token in DEMO_TOKENS:
+        DEMO_TOKENS.pop(token, None)
+
+    transport = current_transport_ctx.get() or session
+    sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
+
+    demo_data = DemoSessionData(username="guest_user", role="guest", session_id=sid)
+    if hasattr(transport, "data"):
+        transport.data = demo_data
+    if hasattr(session, "data"):
+        session.data = demo_data
+
+    return {"success": True, "role": "guest"}
+
+
+@rpc_method("auth.whoami", public=True)
+async def auth_whoami(session, params: dict = None):
+    """Возвращает информацию о текущей роли и сессии сокета."""
+    transport = current_transport_ctx.get() or session
+    data = getattr(transport, "data", None) or getattr(session, "data", None)
+    if data and getattr(data, "role_name", None) in ("admin", "user"):
+        return {
+            "authenticated": True,
+            "username": getattr(data, "username", ""),
+            "role": getattr(data, "role_name", "guest"),
+            "name": getattr(data, "username", "Пользователь"),
+        }
+    return {
+        "authenticated": False,
+        "username": "guest_user",
+        "role": "guest",
+        "name": "Гость",
+    }
+
 
 @rpc_method("auth.set_role", public=True)
 async def set_role(session, params: dict):
@@ -332,6 +434,7 @@ async def set_role(session, params: dict):
         "session_id": sid,
         "role": role_val,
     }
+
 
 
 @rpc_method("admin.system_info", role=UserRole.ADMIN)

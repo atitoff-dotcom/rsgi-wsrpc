@@ -108,16 +108,17 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
 
 class JsonRpcSession:
     __slots__ = (
-        "ws", "user_data", "session_id",
+        "ws", "user_data", "session_id", "scope",
         "_id_generator", "_pending_requests", "_auth_timeout_task", "_idle_timeout_task",
         "_is_alive", "_handler_tasks", "tokens", "rate_limit_enabled", "_closed",
         "_reset_timer_handle", "_main_task", "last_activity",
         "ip", "data", "_on_close_callbacks", "_close_tasks"
     )
 
-    def __init__(self, ws, session_id: int, ip: str = "0.0.0.0"):
+    def __init__(self, ws, session_id: int, ip: str = "0.0.0.0", scope: Any = None):
         self.ws = ws
         self.session_id = session_id
+        self.scope = scope
         self.user_data = {}
         self.ip = ip
         self.data = None
@@ -160,6 +161,22 @@ class JsonRpcSession:
         if self.data and hasattr(self.data, "user_roles"):
             return self.data.user_roles
         return [self.user_role]
+
+    @property
+    def cookies(self) -> Dict[str, str]:
+        """Возвращает распарсенные HTTP-куки из handshake текущего WebSocket-соединения."""
+        if not self.scope:
+            return {}
+        from .http import extract_header
+        raw = extract_header(self.scope, "cookie", "")
+        if not raw:
+            return {}
+        res = {}
+        for item in raw.split(";"):
+            if "=" in item:
+                k, v = item.strip().split("=", 1)
+                res[k.strip()] = v.strip()
+        return res
 
     async def send_str(self, payload_str: str) -> bool:
         """

@@ -82,14 +82,25 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
     from rsgi_wsrpc.core.constants import UserRole
     from rsgi_wsrpc.core.lib.config import settings
 
-    if not settings.security.get("login_rpc"):
+    role = getattr(session, "user_role", None) or getattr(getattr(session, "data", None), "user_role", None)
+    if hasattr(role, "value"):
+        role = role.value
+    if role in ("admin", "ADMIN", UserRole.ADMIN):
         is_super = True
-    else:
-        role = getattr(session, "user_role", None) or getattr(getattr(session, "data", None), "user_role", None)
-        if hasattr(role, "value"):
-            role = role.value
-        if role in ("admin", "ADMIN", UserRole.ADMIN):
+    roles = getattr(session, "user_roles", [])
+    for r in roles:
+        val = r.value if hasattr(r, "value") else r
+        if val in ("admin", "ADMIN", UserRole.ADMIN):
             is_super = True
+            break
+
+    if hasattr(session, "cookies") and session.cookies:
+        token = session.cookies.get("rsgi_crud_session") or session.cookies.get("rsgi_session")
+        if token:
+            from .auth import get_crud_session
+            sdata = get_crud_session(token)
+            if sdata and sdata.get("role") in ("admin", "ADMIN", UserRole.ADMIN):
+                is_super = True
 
     target_model = params.get("model")
 

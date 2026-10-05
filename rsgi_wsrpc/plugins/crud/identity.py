@@ -88,19 +88,30 @@ class DefaultIdentityProvider:
         from rsgi_wsrpc.core.lib.config import settings
         from rsgi_wsrpc.core.constants import UserRole
 
-        # 1. Если login_rpc отключен (открытая система, showcase, dev), открыт полный доступ
-        login_rpc = settings.security.get("login_rpc")
-        if not login_rpc:
-            return True
 
-        # 2. Проверка активного сокета/сессии на роль ADMIN
+        # 1. Проверка активного сокета/сессии на роль ADMIN или сессию по Cookie
         transport = current_transport_ctx.get()
         if transport:
+            if hasattr(transport, "cookies"):
+                token = transport.cookies.get("rsgi_crud_session") or transport.cookies.get("rsgi_session")
+                if token:
+                    from .auth import get_crud_session
+                    sdata = get_crud_session(token)
+                    if sdata and sdata.get("role") in ("admin", "ADMIN", UserRole.ADMIN):
+                        return True
+
             role = getattr(transport, "user_role", None)
             if hasattr(role, "value"):
                 role = role.value
             if role in ("admin", "ADMIN", UserRole.ADMIN):
                 return True
+
+            roles = getattr(transport, "user_roles", [])
+            for r in roles:
+                val = r.value if hasattr(r, "value") else r
+                if val in ("admin", "ADMIN", UserRole.ADMIN):
+                    return True
+
             data = getattr(transport, "data", None)
             if data:
                 data_role = getattr(data, "user_role", None)
@@ -120,9 +131,6 @@ class DefaultIdentityProvider:
         return False
 
     def has_permission(self, user_id: Optional[int], perm: str) -> bool:
-        from rsgi_wsrpc.core.lib.config import settings
-        if not settings.security.get("login_rpc"):
-            return True
         return self.is_superuser(user_id)
 
     async def effective_user_ids(self, user_id: int, model_name: str, db: AsyncSession) -> Set[int]:

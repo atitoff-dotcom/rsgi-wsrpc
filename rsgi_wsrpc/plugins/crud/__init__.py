@@ -36,6 +36,13 @@ from .handlers import (
     crud_bulk_update,
     crud_delete,
 )
+from .auth import (
+    set_crud_authenticator,
+    get_crud_authenticator,
+    create_crud_session,
+    get_crud_session,
+    revoke_crud_session,
+)
 # Регистрация HTTP-роутов для статики
 from . import static_handler  # noqa: F401
 
@@ -72,4 +79,9 @@ __all__ = [
     "crud_update_cell",
     "crud_bulk_update",
     "crud_delete",
+    "set_crud_authenticator",
+    "get_crud_authenticator",
+    "create_crud_session",
+    "get_crud_session",
+    "revoke_crud_session",
 ]

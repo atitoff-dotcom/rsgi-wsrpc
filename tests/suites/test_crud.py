@@ -208,27 +208,55 @@ async def test_crud_lifecycle_in_memory():
         list_after = await handle_crud_list(mock_ws, {"model": "DummyTask"})
         assert list_after["total"] == 0
     finally:
+        set_identity_provider(DefaultIdentityProvider())
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_crud_schema_open_mode():
+async def test_crud_schema_strict_admin_isolation():
     from unittest.mock import MagicMock
-    from rsgi_wsrpc.core.lib.config import configure
+    from rsgi_wsrpc.core.constants import UserRole
+    from rsgi_wsrpc.plugins.crud.auth import create_crud_session, revoke_crud_session
 
-    # In open mode (login_rpc=""), schema returns all registered models
-    configure(login_rpc="")
-    mock_ws = MagicMock()
-    mock_ws.data = None
-    mock_ws.user_role = None
+    set_identity_provider(DefaultIdentityProvider())
 
-    res = await handle_crud_schema(mock_ws, {})
-    assert "models" in res
-    model_keys = [m["key"] for m in res["models"]]
+    # 1. Гость (без роли админа) не видит моделей
+    guest_ws = MagicMock()
+    guest_ws.data = None
+    guest_ws.user_role = UserRole.GUEST
+    guest_ws.user_roles = [UserRole.GUEST]
+    guest_ws.cookies = {}
+
+    res_guest = await handle_crud_schema(guest_ws, {})
+    assert res_guest["models"] == []
+
+    # 2. Администратор (роль ADMIN) получает полный доступ
+    admin_ws = MagicMock()
+    admin_ws.data = None
+    admin_ws.user_role = UserRole.ADMIN
+    admin_ws.user_roles = [UserRole.ADMIN]
+    admin_ws.cookies = {}
+
+    res_admin = await handle_crud_schema(admin_ws, {})
+    model_keys = [m["key"] for m in res_admin["models"]]
     assert "DummyTask" in model_keys
-    task_schema = next(m for m in res["models"] if m["key"] == "DummyTask")
+    task_schema = next(m for m in res_admin["models"] if m["key"] == "DummyTask")
     assert task_schema["permissions"]["can_read"] is True
     assert task_schema["permissions"]["can_create"] is True
     assert task_schema["permissions"]["can_update"] is True
     assert task_schema["permissions"]["can_delete"] is True
+
+    # 3. Аутентификация через Cookie сессии (rsgi_crud_session)
+    token = create_crud_session({"username": "admin", "role": "admin"})
+    cookie_ws = MagicMock()
+    cookie_ws.data = None
+    cookie_ws.user_role = UserRole.GUEST
+    cookie_ws.user_roles = [UserRole.GUEST]
+    cookie_ws.cookies = {"rsgi_crud_session": token}
+
+    res_cookie = await handle_crud_schema(cookie_ws, {})
+    cookie_model_keys = [m["key"] for m in res_cookie["models"]]
+    assert "DummyTask" in cookie_model_keys
+    revoke_crud_session(token)
+
 

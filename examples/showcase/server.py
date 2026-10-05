@@ -51,8 +51,26 @@ ModelRegistry.register(Task)
 ModelRegistry.register(Document)
 
 # Register showcase RPC handlers and plugins
-import handlers  # noqa: F401
+import handlers
+from handlers import DEMO_TOKENS, DemoSessionData, authenticate_credentials
 import rsgi_wsrpc.plugins.files  # Registers HTTP /upload and RPC files.*
+import rsgi_wsrpc.plugins.crud as crud
+
+# Связываем аутентификатор CRUD с учетными данными showcase (admin / admin123)
+crud.set_crud_authenticator(authenticate_credentials)
+
+# Авторизация сокетов по Cookie при подключении
+@app.on_connect
+async def on_socket_connect(session):
+    token = session.cookies.get("rsgi_crud_session") or session.cookies.get("rsgi_session")
+    if token and token in DEMO_TOKENS:
+        user_info = DEMO_TOKENS[token]
+        session.data = DemoSessionData(
+            username=user_info["username"],
+            role=user_info["role"],
+            session_id=session.session_id
+        )
+        logger.info(f"[Showcase Auth] Сокет #{session.session_id} авторизован по Cookie как {user_info['role']} ({user_info['username']})")
 
 # Initialize logging
 setup_logging()
