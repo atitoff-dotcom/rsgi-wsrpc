@@ -33,7 +33,11 @@ class RsgiWsrpcApp:
         database_url: Optional[str] = None,
         files_path: Optional[str] = None,
         login_rpc: Optional[str] = None,
+        auth_timeout: Optional[int] = None,
+        guest_idle_timeout: Optional[int] = None,
+        user_idle_timeout: Optional[int] = None,
         session_idle_timeout: Optional[int] = None,
+        allow_guests: Optional[bool] = None,
         password_iterations: Optional[int] = None,
         token_expire_hours: Optional[int] = None,
         max_message_size: Optional[int] = None,
@@ -61,8 +65,16 @@ class RsgiWsrpcApp:
             config_kwargs["files_path"] = files_path
         if login_rpc is not None:
             config_kwargs["login_rpc"] = login_rpc
+        if auth_timeout is not None:
+            config_kwargs["auth_timeout"] = auth_timeout
+        if guest_idle_timeout is not None:
+            config_kwargs["guest_idle_timeout"] = guest_idle_timeout
+        if user_idle_timeout is not None:
+            config_kwargs["user_idle_timeout"] = user_idle_timeout
         if session_idle_timeout is not None:
             config_kwargs["session_idle_timeout"] = session_idle_timeout
+        if allow_guests is not None:
+            config_kwargs["allow_guests"] = allow_guests
         if password_iterations is not None:
             config_kwargs["password_iterations"] = password_iterations
         if token_expire_hours is not None:

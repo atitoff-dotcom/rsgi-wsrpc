@@ -143,3 +143,39 @@ async def test_rpc_method_with_invalidates_and_wrappers():
     assert res_kwargs == {"id": 99}
     assert called_kwargs["topic_id"] == 99
 
+
+@pytest.mark.asyncio
+async def test_guest_vs_user_idle_and_auth_timeout():
+    from rsgi_wsrpc.core.lib.config import configure, settings
+
+    # 1. By default auth_timeout == 0 (guests not kicked)
+    configure(auth_timeout=0, guest_idle_timeout=1, user_idle_timeout=5)
+    assert settings.security.get("auth_timeout") == 0
+    assert settings.security.get("guest_idle_timeout") == 1
+    assert settings.security.get("user_idle_timeout") == 5
+
+    ws = MockWs([])
+    session = JsonRpcSession(ws, session_id=101)
+    
+    # Run _auth_timeout_loop -> returns immediately without cancelling
+    await session._auth_timeout_loop()
+    assert session._closed is False
+
+    # 2. Config with auth_timeout > 0 kicks unauthenticated
+    configure(auth_timeout=0.01)
+    session2 = JsonRpcSession(ws, session_id=102)
+    dummy_task = asyncio.create_task(asyncio.sleep(10))
+    session2._main_task = dummy_task
+    
+    # Should kick unauthenticated session after timeout
+    await session2._auth_timeout_loop()
+    assert dummy_task.cancelling() > 0 or dummy_task.cancelled()
+    try:
+        await dummy_task
+    except asyncio.CancelledError:
+        pass
+
+    # Restore default auth_timeout=0
+    configure(auth_timeout=0)
+
+

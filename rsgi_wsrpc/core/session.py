@@ -340,9 +340,14 @@ class JsonRpcSession:
 
     async def _auth_timeout_loop(self):
         try:
-            await asyncio.sleep(60.0)
+            from .lib.config import settings
+            timeout = settings.security.get("auth_timeout", 0)
+            if not timeout or timeout <= 0:
+                return
+
+            await asyncio.sleep(timeout)
             if not self.authenticated:
-                logger.warning(f"[Защита] Таймаут авторизации (60с) для сессии {self.session_id}. Закрываем.")
+                logger.warning(f"[Защита] Таймаут авторизации ({int(timeout)}с) для сессии {self.session_id}. Закрываем.")
                 if self._main_task and not self._main_task.done():
                     self._main_task.cancel()
         except asyncio.CancelledError:
@@ -351,19 +356,24 @@ class JsonRpcSession:
     async def _idle_timeout_loop(self):
         try:
             from .lib.config import settings
-            timeout = settings.security.get("session_idle_timeout", 900)
-            if timeout <= 0:
-                return
 
             while not self._closed:
                 await asyncio.sleep(10.0)
                 elapsed = time.time() - self.last_activity
-                if elapsed >= timeout:
-                    logger.warning(f"[Защита] Сессия {self.session_id} закрыта по неактивности ({int(elapsed)}с).")
+
+                # Разделение таймаутов неактивности: для гостей и для зарегистрированных пользователей
+                if self.authenticated:
+                    timeout = settings.security.get("user_idle_timeout") or settings.security.get("session_idle_timeout", 1800)
+                    role_desc = "пользователя"
+                else:
+                    timeout = settings.security.get("guest_idle_timeout") or settings.security.get("session_idle_timeout", 900)
+                    role_desc = "гостя"
+
+                if timeout and timeout > 0 and elapsed >= timeout:
+                    logger.info(f"[Защита] Сессия {self.session_id} ({role_desc}) закрыта по неактивности ({int(elapsed)}с).")
                     try:
-                        # Отправляем уведомление на фронтенд о том, что сессия истекла
                         payload_str = orjson.dumps({
-                            "jsonrpc": "2.0", "method": "session.expired", "params": {}
+                            "jsonrpc": "2.0", "method": "session.expired", "params": {"reason": "idle_timeout"}
                         }).decode("utf-8")
                         await self.send_str(payload_str)
                     except Exception:

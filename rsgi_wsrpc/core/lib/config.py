@@ -86,10 +86,31 @@ def _build_default_settings() -> dict:
     except ValueError:
         token_expire_hours = 24
 
+    try:
+        auth_timeout = int(os.getenv("AUTH_TIMEOUT", "0"))
+    except ValueError:
+        auth_timeout = 0
+
+    try:
+        guest_idle_timeout = int(os.getenv("GUEST_IDLE_TIMEOUT", "900"))
+    except ValueError:
+        guest_idle_timeout = 900
+
+    try:
+        user_idle_timeout = int(os.getenv("USER_IDLE_TIMEOUT", "1800"))
+    except ValueError:
+        user_idle_timeout = 1800
+
+    allow_guests = os.getenv("ALLOW_GUESTS", "true").lower() in ("true", "1", "yes")
+
     return {
         "security": {
             "secret_key": os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-in-production"),
+            "auth_timeout": auth_timeout,
+            "guest_idle_timeout": guest_idle_timeout,
+            "user_idle_timeout": user_idle_timeout,
             "session_idle_timeout": session_idle_timeout,
+            "allow_guests": allow_guests,
             "password_iterations": password_iterations,
             "token_expire_hours": token_expire_hours,
             "login_rpc": os.getenv("LOGIN_RPC", "login."),
@@ -105,7 +126,11 @@ settings = Settings(_build_default_settings())
 
 def configure(
     secret_key: Optional[str] = None,
+    auth_timeout: Optional[int] = None,
+    guest_idle_timeout: Optional[int] = None,
+    user_idle_timeout: Optional[int] = None,
     session_idle_timeout: Optional[int] = None,
+    allow_guests: Optional[bool] = None,
     password_iterations: Optional[int] = None,
     token_expire_hours: Optional[int] = None,
     login_rpc: Optional[str] = None,
@@ -121,7 +146,9 @@ def configure(
         from core.lib.config import configure
         configure(
             secret_key=os.getenv("MY_SECRET", "prod-secret-abc"),
-            session_idle_timeout=1800,
+            guest_idle_timeout=900,
+            user_idle_timeout=1800,
+            allow_guests=True,
             database_url="sqlite+aiosqlite:///data/agrita.db"
         )
     """
@@ -130,8 +157,20 @@ def configure(
 
     if secret_key is not None:
         sec_updates["secret_key"] = secret_key
+    if auth_timeout is not None:
+        sec_updates["auth_timeout"] = auth_timeout
+    if guest_idle_timeout is not None:
+        sec_updates["guest_idle_timeout"] = guest_idle_timeout
+    if user_idle_timeout is not None:
+        sec_updates["user_idle_timeout"] = user_idle_timeout
     if session_idle_timeout is not None:
         sec_updates["session_idle_timeout"] = session_idle_timeout
+        if user_idle_timeout is None:
+            sec_updates["user_idle_timeout"] = session_idle_timeout
+    if allow_guests is not None:
+        sec_updates["allow_guests"] = allow_guests
+        if not allow_guests and auth_timeout is None:
+            sec_updates["auth_timeout"] = 60
     if password_iterations is not None:
         sec_updates["password_iterations"] = password_iterations
     if token_expire_hours is not None:
