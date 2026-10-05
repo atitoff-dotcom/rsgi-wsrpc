@@ -71,28 +71,22 @@ Conventional web applications are caught between two undesirable extremes:
 Decorates any mutating RPC method. Supports declarative string templates with automatic variable substitution from `params` and `result`:
 
 ```python
-from core.session import rpc_method
-from app.system.smart_cache import invalidates
+from rsgi_wsrpc import rpc_method
+from rsgi_wsrpc.plugins.smart_cache import invalidates
 
-# Static and dynamic string templates:
+# Static and dynamic string templates with (session, params):
 @rpc_method("forum.create_topic")
 @invalidates(tags=["forum.topics", "forum.category.{category_id}"])
 async def create_topic(session, params):
     ...
     return {"id": topic.id, "category_id": category_id}
 
-# Invalidate topic list, category, and specific topic thread:
-@rpc_method("forum.create_reply")
-@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
-async def create_reply(session, params):
-    ...
-    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
-
-# Alternative fallback placeholders {topic_id|id}:
+# Also supports kwargs auto-mapping:
 @rpc_method("forum.delete_topic")
 @invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id|id}"])
-async def delete_topic(session, params):
+async def delete_topic(topic_id: int, category_id: int):
     ...
+    return {"success": True}
 ```
 
 ### Live Granular Deltas: `patch_tag`
@@ -100,7 +94,8 @@ async def delete_topic(session, params):
 For counters, likes, and chat streams, patch the client cache directly without re-querying the database:
 
 ```python
-from app.system.smart_cache import patch_tag
+from rsgi_wsrpc import rpc_method
+from rsgi_wsrpc.plugins.smart_cache import patch_tag
 
 @rpc_method("forum.like_post")
 async def like_post(session, params):

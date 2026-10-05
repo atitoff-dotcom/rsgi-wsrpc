@@ -47,10 +47,18 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
     :param public: Если True, метод доступен неавторизованным гостям даже при включенном login_rpc.
     """
     def decorator(func):
-        method_name = name or func.__name__
+        try:
+            unwrapped = inspect.unwrap(func)
+        except Exception:
+            unwrapped = func
 
-        sig = inspect.signature(func)
+        method_name = name or getattr(unwrapped, "__name__", getattr(func, "__name__", "anonymous"))
+
+        sig = inspect.signature(unwrapped)
         param_names = list(sig.parameters.keys())
+        has_var_pos = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in sig.parameters.values())
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        is_generic_wrapper = has_var_pos and has_var_kw
         expects_session_and_params = len(param_names) == 2 and param_names[0] in ("session", "self", "s") and param_names[1] in ("params", "args", "data", "p")
 
         async def wrapper(session, params):
@@ -68,21 +76,19 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
                     role_repr = role.value if hasattr(role, "value") else role
                     raise RPCError(-32003, f"Доступ запрещен: требуется роль {role_repr}")
 
-            if expects_session_and_params:
+            if expects_session_and_params or is_generic_wrapper:
                 return await func(session, params)
 
             # Если первый аргумент явно session/self
             if param_names and param_names[0] in ("session", "self", "s"):
                 if isinstance(params, dict):
                     # Отфильтруем только те аргументы, которые ожидает функция (или передадим все, если есть **kwargs)
-                    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
                     kw = params if has_var_kw else {k: v for k, v in params.items() if k in sig.parameters}
                     return await func(session, **kw)
                 return await func(session, params)
 
             # Если сигнатура ожидает только именованные параметры без явного session
             if isinstance(params, dict):
-                has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
                 kw = params if has_var_kw else {k: v for k, v in params.items() if k in sig.parameters}
                 return await func(**kw)
 

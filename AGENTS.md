@@ -109,7 +109,22 @@ async def get_users():
 
 ---
 
-## 5. Рассылки реального времени (Broadcast)
+## 5. Smart Cache и инвалидация тегов (RFC 0001)
+
+Для реактивной инвалидации кэша на клиентах при мутациях используйте `@invalidates`:
+```python
+from rsgi_wsrpc.plugins.smart_cache import invalidates
+
+@rpc_method("topics.delete")
+@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
+async def delete_topic(topic_id: int, category_id: int):
+    # Теги со строковыми шаблонами разрешаются автоматически из params/kwargs и result
+    return {"status": "ok"}
+```
+
+---
+
+## 6. Рассылки реального времени (Broadcast)
 
 Неблокирующая рассылка уведомлений всем подключенным сокетам с оверхедом O(1):
 ```python
@@ -121,7 +136,7 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
 
 ---
 
-## 6. Загрузка файлов (Двухфазный коммит 2PC)
+## 7. Загрузка файлов (Двухфазный коммит 2PC)
 
 Загрузка больших файлов (до сотен гигабайт) работает через Granian HTTP стриминг:
 1. `POST /upload?folder_hash=...` — чанки пишутся сразу на диск без буферизации в RAM.
@@ -130,7 +145,7 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
 
 ---
 
-## 7. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
+## 8. 🚫 КРИТИЧЕСКИЕ АНТИ-ПАТТЕРНЫ (Anti-Hallucination Guardrails)
 
 1. ❌ **НЕ ИМПОРТИРУЙТЕ `fastapi`, `starlette` или ASGI-модули.**
    - Сервер работает на **Granian RSGI**, где `scope.proto` — `"http"` или `"websocket"`.
@@ -145,3 +160,5 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
    - Используйте `inspect.iscoroutinefunction(func)` (совместимо с Python 3.11–3.14+).
 6. ❌ **НЕ ЗАБЫВАЙТЕ про `public=True` для публичных методов.**
    - Если метод должен быть доступен неавторизованному гостю и не начинается с `login.`, всегда указывайте `@rpc_method("name", public=True)`.
+7. ❌ **НЕ ЗАБЫВАЙТЕ `@functools.wraps(func)` в кастомных декораторах хендлеров.**
+   - При создании декораторов всегда используйте `@wraps(func)`, чтобы механизм unwrapping и auto-mapping сигнатур корректно извлекал параметры.

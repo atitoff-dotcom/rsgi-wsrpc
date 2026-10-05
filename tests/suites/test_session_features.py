@@ -86,3 +86,60 @@ async def test_session_multi_roles_access():
     with pytest.raises(RPCError) as exc:
         await handler(MockGuestSession(), {})
     assert exc.value.code == -32003
+
+
+@pytest.mark.asyncio
+async def test_rpc_method_with_invalidates_and_wrappers():
+    from rsgi_wsrpc.plugins.smart_cache import invalidates
+
+    called = {}
+
+    @rpc_method("test.delete_topic")
+    @invalidates(tags=["forum.topics", "forum.topic.{topic_id|id}"])
+    async def delete_topic(session, params):
+        called["session"] = session
+        called["params"] = params
+        return {"deleted": True}
+
+    handler = RPC_REGISTRY["test.delete_topic"]
+    mock_session = MagicMock()
+    res = await handler(mock_session, {"topic_id": 42})
+    assert res == {"deleted": True}
+    assert called["session"] is mock_session
+    assert called["params"] == {"topic_id": 42}
+
+    # Test generic wrapper without @wraps
+    def dummy_decorator_no_wraps(func):
+        async def generic_wrapper(*args, **kwargs):
+            return await func(*args, **kwargs)
+        return generic_wrapper
+
+    called_generic = {}
+
+    @rpc_method("test.generic_wrapped")
+    @dummy_decorator_no_wraps
+    async def generic_handler(session, params):
+        called_generic["session"] = session
+        called_generic["params"] = params
+        return {"ok": True}
+
+    handler_generic = RPC_REGISTRY["test.generic_wrapped"]
+    res_generic = await handler_generic(mock_session, {"foo": "bar"})
+    assert res_generic == {"ok": True}
+    assert called_generic["session"] is mock_session
+    assert called_generic["params"] == {"foo": "bar"}
+
+    # Test invalidates with kwargs mapping
+    called_kwargs = {}
+
+    @rpc_method("test.kwargs_wrapped")
+    @invalidates(tags=["forum.topic.{topic_id}"])
+    async def kwargs_handler(topic_id: int):
+        called_kwargs["topic_id"] = topic_id
+        return {"id": topic_id}
+
+    handler_kwargs = RPC_REGISTRY["test.kwargs_wrapped"]
+    res_kwargs = await handler_kwargs(mock_session, {"topic_id": 99})
+    assert res_kwargs == {"id": 99}
+    assert called_kwargs["topic_id"] == 99
+

@@ -6,6 +6,7 @@ Smart Cache Engine: Реестр версий сущностей, инвалид
 """
 
 import asyncio
+from functools import wraps
 import inspect
 import re
 from datetime import datetime, timezone
@@ -266,6 +267,7 @@ def invalidates(
     Поддерживает декларативные строковые шаблоны с автоматической подстановкой из params и result.
     """
     def decorator(func: Callable):
+        @wraps(func)
         async def wrapper(*args, **kwargs):
             result = await func(*args, **kwargs)
 
@@ -277,11 +279,17 @@ def invalidates(
                 params = kwargs["params"]
             elif len(args) > 0 and isinstance(args[0], dict):
                 params = args[0]
+            elif kwargs:
+                params = kwargs
 
             # Формируем контекст разрешения шаблонов из params и result
             context: Dict[str, Any] = {"params": params, "result": result}
             if isinstance(params, dict):
                 for k, v in params.items():
+                    if k not in context:
+                        context[k] = v
+            if kwargs:
+                for k, v in kwargs.items():
                     if k not in context:
                         context[k] = v
             if isinstance(result, dict):

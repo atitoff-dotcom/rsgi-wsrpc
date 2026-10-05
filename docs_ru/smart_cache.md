@@ -71,28 +71,22 @@
 Декоратор вешается на любой мутирующий RPC-метод. Поддерживает декларативные строковые шаблоны с автоматической подстановкой из входных параметров `params` и результата `result`:
 
 ```python
-from core.session import rpc_method
-from app.system.smart_cache import invalidates
+from rsgi_wsrpc import rpc_method
+from rsgi_wsrpc.plugins.smart_cache import invalidates
 
-# Статические и динамические строковые шаблоны:
+# Статические и динамические строковые шаблоны с (session, params):
 @rpc_method("forum.create_topic")
 @invalidates(tags=["forum.topics", "forum.category.{category_id}"])
 async def create_topic(session, params):
     ...
     return {"id": topic.id, "category_id": category_id}
 
-# Инвалидация списка тем, категории и конкретной темы по ID:
-@rpc_method("forum.create_reply")
-@invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id}"])
-async def create_reply(session, params):
-    ...
-    return {"id": reply.id, "topic_id": topic_id, "category_id": topic.category_id}
-
-# Поддержка альтернативных плейсхолдеров {topic_id|id}:
+# Поддержка автоматического маппинга именованных аргументов (kwargs):
 @rpc_method("forum.delete_topic")
 @invalidates(tags=["forum.topics", "forum.category.{category_id}", "forum.topic.{topic_id|id}"])
-async def delete_topic(session, params):
+async def delete_topic(topic_id: int, category_id: int):
     ...
+    return {"success": True}
 ```
 
 ### Точечные патчи `patch_tag`
@@ -100,7 +94,8 @@ async def delete_topic(session, params):
 Для счетчиков просмотров, лайков или чатов можно применить патч без повторного чтения всей темы из БД:
 
 ```python
-from app.system.smart_cache import patch_tag
+from rsgi_wsrpc import rpc_method
+from rsgi_wsrpc.plugins.smart_cache import patch_tag
 
 @rpc_method("forum.like_post")
 async def like_post(session, params):
