@@ -177,5 +177,7 @@ async def test_guest_vs_user_idle_and_auth_timeout():
 
     # Restore default auth_timeout=0
     configure(auth_timeout=0)
+    await session.close()
+    await session2.close()
 
 

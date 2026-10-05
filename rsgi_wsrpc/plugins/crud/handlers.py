@@ -78,6 +78,19 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
     provider = get_identity_provider()
     uid = provider.user_id(session)
     is_super = provider.is_superuser(uid)
+
+    from rsgi_wsrpc.core.constants import UserRole
+    from rsgi_wsrpc.core.lib.config import settings
+
+    if not settings.security.get("login_rpc"):
+        is_super = True
+    else:
+        role = getattr(session, "user_role", None) or getattr(getattr(session, "data", None), "user_role", None)
+        if hasattr(role, "value"):
+            role = role.value
+        if role in ("admin", "ADMIN", UserRole.ADMIN):
+            is_super = True
+
     target_model = params.get("model")
 
     def make_perms(meta: ModelMeta) -> Dict[str, bool]:
@@ -99,6 +112,10 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
         meta = _get_model_meta(target_model)
         perms = make_perms(meta)
         return {"model": meta.to_schema_dict(perms)}
+
+    if not ModelRegistry.all():
+        from rsgi_wsrpc.plugins.db import Base
+        ModelRegistry.auto_discover(Base)
 
     models_list = []
     for meta in ModelRegistry.all().values():

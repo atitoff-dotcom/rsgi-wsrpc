@@ -53,34 +53,76 @@ class DefaultIdentityProvider:
     Используется по умолчанию, если приложение не зарегистрировало свой провайдер.
     """
     def user_id(self, session: Any) -> Optional[int]:
-        from rsgi_wsrpc.core.session import current_user_ctx
+        from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
         user = current_user_ctx.get()
         if user:
             return getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
-        user = getattr(session, "user", None)
+        user = getattr(session, "user", None) or getattr(getattr(session, "data", None), "user", None)
         if user:
             return getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
+        if hasattr(session, "user_id"):
+            return getattr(session, "user_id")
+        data = getattr(session, "data", None)
+        if data and hasattr(data, "user_id"):
+            return getattr(data, "user_id")
+        transport = current_transport_ctx.get()
+        if transport and hasattr(getattr(transport, "data", None), "user_id"):
+            return getattr(transport.data, "user_id")
         return None
 
     def user_name(self, session: Any) -> str:
-        from rsgi_wsrpc.core.session import current_user_ctx
+        from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
         user = current_user_ctx.get() or getattr(session, "user", None)
         if user:
             return getattr(user, "username", "") if not isinstance(user, dict) else user.get("username", "")
+        data = getattr(session, "data", None)
+        if data and hasattr(data, "username"):
+            return getattr(data, "username")
+        transport = current_transport_ctx.get()
+        if transport and hasattr(getattr(transport, "data", None), "username"):
+            return getattr(transport.data, "username")
         return "anonymous"
 
     def is_superuser(self, user_id: Optional[int]) -> bool:
-        from rsgi_wsrpc.core.session import current_user_ctx
+        from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
+        from rsgi_wsrpc.core.lib.config import settings
+        from rsgi_wsrpc.core.constants import UserRole
+
+        # 1. Если login_rpc отключен (открытая система, showcase, dev), открыт полный доступ
+        login_rpc = settings.security.get("login_rpc")
+        if not login_rpc:
+            return True
+
+        # 2. Проверка активного сокета/сессии на роль ADMIN
+        transport = current_transport_ctx.get()
+        if transport:
+            role = getattr(transport, "user_role", None)
+            if hasattr(role, "value"):
+                role = role.value
+            if role in ("admin", "ADMIN", UserRole.ADMIN):
+                return True
+            data = getattr(transport, "data", None)
+            if data:
+                data_role = getattr(data, "user_role", None)
+                if hasattr(data_role, "value"):
+                    data_role = data_role.value
+                if data_role in ("admin", "ADMIN", UserRole.ADMIN):
+                    return True
+
+        # 3. Проверка пользователя в контексте auth
         user = current_user_ctx.get()
         if user:
             role = getattr(user, "role", None) if not isinstance(user, dict) else user.get("role")
-            if role in ("admin", "superuser", 1, "ADMIN"):
+            if role in ("admin", "superuser", 1, "ADMIN", UserRole.ADMIN):
                 return True
             if getattr(user, "is_superuser", False) if not isinstance(user, dict) else user.get("is_superuser", False):
                 return True
         return False
 
     def has_permission(self, user_id: Optional[int], perm: str) -> bool:
+        from rsgi_wsrpc.core.lib.config import settings
+        if not settings.security.get("login_rpc"):
+            return True
         return self.is_superuser(user_id)
 
     async def effective_user_ids(self, user_id: int, model_name: str, db: AsyncSession) -> Set[int]:
