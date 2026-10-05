@@ -22,7 +22,7 @@ from sqlalchemy import select, delete, update
 
 from rsgi_wsrpc.core.session import (
     rpc_method, JsonRpcSession, RPCError,
-    ACTIVE_SESSIONS_SET, current_rpc_id_ctx
+    ACTIVE_SESSIONS_SET, current_rpc_id_ctx, current_transport_ctx
 )
 from rsgi_wsrpc.core.tabular import tabular_response
 from rsgi_wsrpc.core.constants import UserRole
@@ -40,16 +40,35 @@ except ImportError:
 
 class DemoSessionData:
     """Lightweight session context object for showcase demonstration."""
-    def __init__(self, username: str = "guest_user", role: str = "guest"):
+    def __init__(self, username: str = "guest_user", role: str = "guest", session_id: int = 1):
         self.username = username
-        self.role = role
+        self.role_name = role
+        self.session_id = session_id
         self.user_id = 1
+        if role == "admin":
+            self.user_role = UserRole.ADMIN
+            self.user_roles = [UserRole.ADMIN, UserRole.USER]
+        elif role == "user":
+            self.user_role = UserRole.USER
+            self.user_roles = [UserRole.USER]
+        else:
+            self.user_role = UserRole.GUEST
+            self.user_roles = [UserRole.GUEST]
+
+
+def get_current_role(session) -> str:
+    """Safely extracts role string from session or session.data."""
+    target = getattr(session, "data", None) or session
+    role = getattr(target, "user_role", None) or getattr(session, "user_role", UserRole.GUEST)
+    if hasattr(role, "value"):
+        return role.value
+    return str(role)
 
 
 # --- 1. SYSTEM METHODS (HEALTH & PING) ---
 
 @rpc_method("system.ping", public=True)
-async def ping(session: JsonRpcSession, params: dict):
+async def ping(session, params: dict):
     """Ultra-fast ping-pong to measure network Round Trip Time (RTT)."""
     return {
         "status": "pong",
@@ -59,16 +78,19 @@ async def ping(session: JsonRpcSession, params: dict):
 
 
 @rpc_method("system.info", public=True)
-async def system_info(session: JsonRpcSession, params: dict):
+async def system_info(session, params: dict):
     """System information, active sessions, and environment metrics."""
-    role_val = session.user_role.value if hasattr(session.user_role, "value") else str(session.user_role)
+    transport = current_transport_ctx.get() or session
+    role_val = get_current_role(transport)
+    sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
+
     return {
         "framework": "rsgi-wsrpc",
         "rsgi_server": "Granian (Rust)",
         "python_version": sys.version.split()[0],
         "os_platform": platform.platform(),
         "active_sessions_count": len(ACTIVE_SESSIONS_SET),
-        "your_session_id": session.session_id,
+        "your_session_id": sid,
         "your_current_role": role_val,
         "database": "SQLite (aiosqlite + SQLAlchemy 2.0)",
     }
@@ -193,13 +215,14 @@ async def cache_manual_invalidate(session: JsonRpcSession, params: dict):
 # --- 4. MULTI-RETURN STREAMING ---
 
 @rpc_method("stream.heavy_job", public=True)
-async def heavy_job(session: JsonRpcSession, params: dict):
+async def heavy_job(session, params: dict):
     """
     Demonstrates multi-return streaming (stream: true).
     The server sends intermediate progress chunks to the client
     without blocking other requests in the same WebSocket connection!
     """
     rpc_id = current_rpc_id_ctx.get()
+    transport = current_transport_ctx.get() or session
     steps = [
         (20, "1/4 Initializing structures and warming up cache..."),
         (45, "2/4 Scanning SQLite indices..."),
@@ -209,11 +232,12 @@ async def heavy_job(session: JsonRpcSession, params: dict):
 
     for pct, message in steps:
         await asyncio.sleep(0.4)
-        await session.send_stream_chunk(rpc_id, {
-            "progress": pct,
-            "message": message,
-            "timestamp": time.strftime("%H:%M:%S")
-        })
+        if hasattr(transport, "send_stream_chunk"):
+            await transport.send_stream_chunk(rpc_id, {
+                "progress": pct,
+                "message": message,
+                "timestamp": time.strftime("%H:%M:%S")
+            })
 
     await asyncio.sleep(0.3)
     # Final return completes the RPC request
@@ -228,16 +252,18 @@ async def heavy_job(session: JsonRpcSession, params: dict):
 # --- 5. REVERSE RPC (SERVER CALLS CLIENT) ---
 
 @rpc_method("reverse_rpc.ask_client", public=True)
-async def ask_client_info(session: JsonRpcSession, params: dict):
+async def ask_client_info(session, params: dict):
     """
     Symmetric JSON-RPC 2.0: The server initiates a request to the browser
     via session.send_request(...) and awaits the client's response!
     """
-    if not session.authenticated:
-        session.data = DemoSessionData(username="showcase_user", role="guest")
+    transport = current_transport_ctx.get() or session
+    if hasattr(transport, "data") and not transport.data:
+        sid = getattr(transport, "session_id", 1)
+        transport.data = DemoSessionData(username="showcase_user", role="guest", session_id=sid)
 
     try:
-        client_response = await session.send_request(
+        client_response = await transport.send_request(
             method="client.get_env",
             params={"requested_by": "rsgi_wsrpc_server", "query_time": time.time()},
             timeout=4.0
@@ -256,7 +282,7 @@ async def ask_client_info(session: JsonRpcSession, params: dict):
 # --- 6. REALTIME BROADCAST ---
 
 @rpc_method("broadcast.send_announcement", public=True)
-async def send_announcement(session: JsonRpcSession, params: dict):
+async def send_announcement(session, params: dict):
     """
     Broadcasts message to all active WebSocket sessions in O(1)
     with single memory serialization.
@@ -265,12 +291,14 @@ async def send_announcement(session: JsonRpcSession, params: dict):
     if not text:
         raise RPCError(-32602, "Message text cannot be empty")
 
-    author = params.get("author") or f"Session #{session.session_id}"
+    transport = current_transport_ctx.get() or session
+    sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
+    author = params.get("author") or f"Session #{sid}"
     payload = {
         "text": text,
         "author": author,
         "timestamp": time.strftime("%H:%M:%S"),
-        "session_id": session.session_id,
+        "session_id": sid,
     }
     await broadcast_notification("community.alert", payload)
     return {"sent": True, "recipients_count": len(ACTIVE_SESSIONS_SET)}
@@ -279,27 +307,30 @@ async def send_announcement(session: JsonRpcSession, params: dict):
 # --- 7. ROLES & RBAC ---
 
 @rpc_method("auth.set_role", public=True)
-async def set_role(session: JsonRpcSession, params: dict):
+async def set_role(session, params: dict):
     """
     Switches session role for RBAC inspection.
     Allowed roles: 'guest', 'user', 'admin'.
     """
     role_name = (params.get("role") or "guest").lower()
-    if role_name == "admin":
-        session.user_role = UserRole.ADMIN
-    elif role_name == "user":
-        session.user_role = UserRole.USER
-    else:
-        session.user_role = UserRole.GUEST
+    transport = current_transport_ctx.get() or session
+    sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
 
-    session.data = DemoSessionData(
-        username=f"user_{session.session_id}",
-        role=role_name
+    demo_data = DemoSessionData(
+        username=f"user_{sid}",
+        role=role_name,
+        session_id=sid
     )
 
+    if hasattr(transport, "data"):
+        transport.data = demo_data
+    if hasattr(session, "data"):
+        session.data = demo_data
+
+    role_val = get_current_role(transport)
     return {
-        "session_id": session.session_id,
-        "role": session.user_role.value if hasattr(session.user_role, "value") else str(session.user_role),
+        "session_id": sid,
+        "role": role_val,
     }
 
 
