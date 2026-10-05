@@ -113,3 +113,41 @@ async def test_app_websocket_accept():
     proto = MockProto()
     await app(scope, proto)
     assert proto.accepted is True
+
+
+@pytest.mark.asyncio
+async def test_app_seo_interceptor():
+    from rsgi_wsrpc.plugins.seo import bot_page, SeoPageData
+
+    @bot_page("/article/{id:int}")
+    async def render_article(id: int):
+        return SeoPageData(title=f"Article #{id}", description="SEO rendered")
+
+    app = RsgiWsrpcApp(enable_seo=True)
+
+    # 1. Запрос от Googlebot
+    scope_bot = MockScope(
+        proto="http",
+        method="GET",
+        path="/article/42",
+        headers=[("user-agent", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")]
+    )
+    proto_bot = MockProto()
+    await app(scope_bot, proto_bot)
+
+    assert proto_bot.status == 200
+    headers_bot = dict(proto_bot.headers)
+    assert headers_bot.get("x-rendered-for") == "bot"
+    assert "Article #42" in proto_bot.body
+
+    # 2. Запрос от обычного браузера (должен пройти мимо SEO-перехватчика)
+    scope_browser = MockScope(
+        proto="http",
+        method="GET",
+        path="/article/42",
+        headers=[("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")]
+    )
+    proto_browser = MockProto()
+    await app(scope_browser, proto_browser)
+    # Так как нет index_file или static, вернется 404 (перехватчик не сработал)
+    assert proto_browser.status == 404

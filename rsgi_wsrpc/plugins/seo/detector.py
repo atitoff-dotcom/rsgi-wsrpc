@@ -90,10 +90,14 @@ def is_bot(scope_or_ua: Optional[Union[str, Any]]) -> bool:
     return False
 
 
+# Алиас для обратной совместимости
+is_search_bot = is_bot
+
 __all__ = [
     "BOT_USER_AGENT_PATTERN",
     "CLI_SCRAPERS_PATTERN",
     "BROWSER_ENGINE_PATTERN",
     "is_bot",
+    "is_search_bot",
 ]
 

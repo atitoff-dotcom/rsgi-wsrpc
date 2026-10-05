@@ -27,7 +27,7 @@ from rsgi_wsrpc.app import RsgiWsrpcApp
 from rsgi_wsrpc import core
 from rsgi_wsrpc import plugins
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 __all__ = [
     "RsgiWsrpcApp",

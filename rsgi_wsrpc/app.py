@@ -185,16 +185,9 @@ class RsgiWsrpcApp:
         # 2. Опциональный перехват SEO-ботов
         if self.enable_seo:
             try:
-                from .plugins.seo.detector import is_search_bot
                 from .plugins.seo.router import handle_bot_http
-                user_agent = ""
-                for k, v in getattr(scope, "headers", []):
-                    if k.lower() == "user-agent":
-                        user_agent = v
-                        break
-                if is_search_bot(user_agent):
-                    if await handle_bot_http(scope, proto):
-                        return
+                if await handle_bot_http(scope, proto):
+                    return
             except ImportError:
                 pass
             except Exception as e:

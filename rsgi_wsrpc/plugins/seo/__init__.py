@@ -6,6 +6,7 @@ rsgi_wsrpc.plugins.seo: Официальный плагин SEO, Dynamic Renderi
 from .config import configure_seo, get_seo_config, SeoConfig
 from .detector import (
     is_bot,
+    is_search_bot,
     BOT_USER_AGENT_PATTERN,
     CLI_SCRAPERS_PATTERN,
     BROWSER_ENGINE_PATTERN,
@@ -38,6 +39,7 @@ __all__ = [
     "SeoConfig",
     # Детектор ботов
     "is_bot",
+    "is_search_bot",
     "BOT_USER_AGENT_PATTERN",
     "CLI_SCRAPERS_PATTERN",
     "BROWSER_ENGINE_PATTERN",
