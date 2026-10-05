@@ -199,7 +199,12 @@ class RsgiWsrpcApp:
                 if path == route_path:
                     await handler(scope, proto)
                     return
-                elif route_path.endswith("/*") and path.startswith(route_path[:-1]):
+                elif route_path.endswith("/*"):
+                    prefix = route_path[:-1]  # e.g. "/crud/"
+                    if path.startswith(prefix) or path == route_path[:-2]:  # "/crud/" or "/crud"
+                        await handler(scope, proto)
+                        return
+                elif path.rstrip("/") == route_path.rstrip("/"):
                     await handler(scope, proto)
                     return
 

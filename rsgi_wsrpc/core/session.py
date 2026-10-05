@@ -148,6 +148,19 @@ class JsonRpcSession:
     def authenticated(self) -> bool:
         return self.data is not None
 
+    @property
+    def user_role(self):
+        from .constants import UserRole
+        if self.data and hasattr(self.data, "user_role"):
+            return self.data.user_role
+        return UserRole.GUEST
+
+    @property
+    def user_roles(self):
+        if self.data and hasattr(self.data, "user_roles"):
+            return self.data.user_roles
+        return [self.user_role]
+
     async def send_str(self, payload_str: str) -> bool:
         """
         Безопасная неблокирующая отправка текстового payload в WebSocket.
