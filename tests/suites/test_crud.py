@@ -210,12 +210,13 @@ async def test_crud_lifecycle_in_memory():
     finally:
         set_identity_provider(DefaultIdentityProvider())
         await engine.dispose()
+        from rsgi_wsrpc.plugins.db import engine as orig_engine
+        async_session.configure(bind=orig_engine)
 
 
 @pytest.mark.asyncio
 async def test_crud_schema_strict_admin_isolation():
     from unittest.mock import MagicMock
-    from rsgi_wsrpc.core.constants import UserRole
     from rsgi_wsrpc.plugins.crud.auth import create_crud_session, revoke_crud_session
 
     set_identity_provider(DefaultIdentityProvider())
@@ -223,18 +224,18 @@ async def test_crud_schema_strict_admin_isolation():
     # 1. Гость (без роли админа) не видит моделей
     guest_ws = MagicMock()
     guest_ws.data = None
-    guest_ws.user_role = UserRole.GUEST
-    guest_ws.user_roles = [UserRole.GUEST]
+    guest_ws.user_role = None
+    guest_ws.user_roles = []
     guest_ws.cookies = {}
 
     res_guest = await handle_crud_schema(guest_ws, {})
     assert res_guest["models"] == []
 
-    # 2. Администратор (роль ADMIN) получает полный доступ
+    # 2. Администратор (роль admin) получает полный доступ
     admin_ws = MagicMock()
     admin_ws.data = None
-    admin_ws.user_role = UserRole.ADMIN
-    admin_ws.user_roles = [UserRole.ADMIN]
+    admin_ws.user_role = "admin"
+    admin_ws.user_roles = ["admin"]
     admin_ws.cookies = {}
 
     res_admin = await handle_crud_schema(admin_ws, {})
@@ -250,13 +251,134 @@ async def test_crud_schema_strict_admin_isolation():
     token = create_crud_session({"username": "admin", "role": "admin"})
     cookie_ws = MagicMock()
     cookie_ws.data = None
-    cookie_ws.user_role = UserRole.GUEST
-    cookie_ws.user_roles = [UserRole.GUEST]
+    cookie_ws.user_role = None
+    cookie_ws.user_roles = []
     cookie_ws.cookies = {"rsgi_crud_session": token}
 
     res_cookie = await handle_crud_schema(cookie_ws, {})
     cookie_model_keys = [m["key"] for m in res_cookie["models"]]
     assert "DummyTask" in cookie_model_keys
     revoke_crud_session(token)
+
+
+@pytest.mark.asyncio
+async def test_crud_sso_and_zero_leakage_404():
+    from rsgi_wsrpc.plugins.crud.static_handler import serve_crud_static
+    from rsgi_wsrpc.plugins.crud.auth import set_crud_session_validator, create_crud_session
+
+    class MockRsgiProto:
+        def __init__(self):
+            self.status = None
+            self.headers = []
+            self.body = None
+            self.file_path = None
+
+        def response_str(self, status, headers, body):
+            self.status = status
+            self.headers = headers
+            self.body = body
+
+        def response_file(self, status, headers, file):
+            self.status = status
+            self.headers = headers
+            self.file_path = file
+
+    class MockScope:
+        def __init__(self, path="/crud/", method="GET", cookie=""):
+            self.path = path
+            self.method = method
+            self.headers = [("cookie", cookie)]
+
+    # 1. Запрос гостя без сессии -> 404 Not Found (Zero-Leakage)
+    scope_guest = MockScope(path="/crud/")
+    proto_guest = MockRsgiProto()
+    await serve_crud_static(scope_guest, proto_guest)
+    assert proto_guest.status == 404
+
+    # 2. Запрос обычного пользователя (не admin) -> 404 Not Found
+    user_token = create_crud_session({"username": "user", "role": "user"})
+    scope_user = MockScope(path="/crud/", cookie=f"rsgi_crud_session={user_token}")
+    proto_user = MockRsgiProto()
+    await serve_crud_static(scope_user, proto_user)
+    assert proto_user.status == 404
+
+    # 3. Запрос админа -> 200 OK (отдает index.html)
+    admin_token = create_crud_session({"username": "admin", "role": "admin"})
+    scope_admin = MockScope(path="/crud/", cookie=f"rsgi_crud_session={admin_token}")
+    proto_admin = MockRsgiProto()
+    await serve_crud_static(scope_admin, proto_admin)
+    assert proto_admin.status == 200
+    assert proto_admin.file_path is not None and "index.html" in proto_admin.file_path
+
+    # 4. Проверка внешнего SSO валидатора
+    set_crud_session_validator(lambda t: {"username": "sso_admin", "role": "admin"} if t == "valid_sso" else None)
+    scope_sso = MockScope(path="/crud/", cookie="rsgi_crud_session=valid_sso")
+    proto_sso = MockRsgiProto()
+    await serve_crud_static(scope_sso, proto_sso)
+    assert proto_sso.status == 200
+
+
+@pytest.mark.asyncio
+async def test_crud_m2m_update_cell():
+    """Тестирует редактирование ячейки M2M связи (User -> roles) через crud.update_cell."""
+    from rsgi_wsrpc.plugins.db import async_session
+    from rsgi_wsrpc.plugins.auth.models import User, Role
+    from rsgi_wsrpc.plugins.auth.models import _register_internal_auth_models
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async_session.configure(bind=engine)
+
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        ModelRegistry.clear()
+        _register_internal_auth_models()
+        ModelRegistry.register(User)
+        ModelRegistry.register(Role)
+
+        provider = MockIdentityProvider(user_id=1, is_admin=True)
+        set_identity_provider(provider)
+        set_access_policy(DefaultAccessPolicy())
+        mock_ws = MockSession(user_id=1, is_admin=True)
+
+        # Создаем роли
+        await handle_crud_create(mock_ws, {
+            "model": "Role",
+            "data": {"name": "moderator", "description": "Moderator role"}
+        })
+        await handle_crud_create(mock_ws, {
+            "model": "Role",
+            "data": {"name": "editor", "description": "Editor role"}
+        })
+
+        # Создаем пользователя
+        u_res = await handle_crud_create(mock_ws, {
+            "model": "User",
+            "data": {"login": "testuser", "name": "Test User", "password": "password123"}
+        })
+        user_id = u_res["id"]
+
+        # Назначаем M2M роль через crud.update_cell
+        update_res = await handle_crud_update_cell(mock_ws, {
+            "model": "User",
+            "id": user_id,
+            "field": "roles",
+            "value": ["moderator"]
+        })
+        assert update_res["success"] is True
+        assert "moderator" in update_res["value"]
+
+        # Проверяем получение через crud.get
+        get_res = await handle_crud_get(mock_ws, {"model": "User", "id": user_id})
+        roles = [r["label"] for r in get_res["record"]["roles"]]
+        assert "moderator" in roles
+    finally:
+        set_identity_provider(DefaultIdentityProvider())
+        await engine.dispose()
+        from rsgi_wsrpc.plugins.db import engine as orig_engine
+        async_session.configure(bind=orig_engine)
+
+
 
 

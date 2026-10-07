@@ -147,24 +147,74 @@
 
 ## 5. Как настраивать плагины из приложения (Code-First)
 
-Плагины не зашивают параметры намертво, а настраиваются напрямую в коде приложения через `configure(...)` или переменные окружения:
+Фреймворк следует принципу **«Один очевидный способ без лишнего шума»**: все настройки ядра и плагинов собираются в **единой точке входа** — конструкторе приложения `app = RsgiWsrpcApp(...)`.
+
+Никаких разрозненных вызовов `configure()` и «слепых» словарей без автодополнения:
 
 ```python
-from core.lib.config import configure
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, VkOAuth, YandexOAuth
 
-configure(
-    auth={
-        "session_lifetime_days": 30,   # Сколько дней живет токен активности
-        "max_active_sessions": 10,     # Максимум активных устройств на пользователя
-    },
-    oauth={
-        "vk": {"enabled": True, "client_id": "12345", "client_secret": "секрет"},
-        "yandex": {"enabled": True, "client_id": "67890", "client_secret": "секрет"}
-    }
+app = RsgiWsrpcApp(
+    # --- 1. СЕТЬ, HTTP И СТАТИКА ---
+    static_dir="./public",             # Папка фронтенда (Rust Zero-Copy proto.response_file)
+    index_file="index.html",           # Корневой SPA-файл на GET /
+    cors=True,                         # Автоматическая обработка OPTIONS и CORS
+    cors_origins="*",                  # Разрешенные origins
+
+    # --- 2. БАЗА ДАННЫХ (plugins.db) ---
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    db_echo=False,                     # SQL-логирование (True для отладки)
+
+    # --- 3. АВТОРИЗАЦИЯ И СЕССИИ (plugins.auth) ---
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    login_rpc="login.",                # Методы, открытые гостям (вместе с is_public в БД)
+    token_expire_hours=24 * 30,        # Срок жизни сессии (30 дней)
+    auth_timeout=0,                    # Таймаут на вход (0 = гости не отключаются)
+
+    # --- 4. ВНЕШНЯЯ АВТОРИЗАЦИЯ (OAuth) ---
+    # Строгие типизированные классы с автоподстановкой в IDE:
+    oauth=[
+        VkOAuth(client_id="12345", client_secret="секрет_vk"),
+        YandexOAuth(client_id="67890", client_secret="секрет_ya"),
+    ],
+
+    # --- 5. ФАЙЛОВОЕ ХРАНИЛИЩЕ (plugins.files) ---
+    files_path="./uploads",            # Каталог для двухфазных загрузок (2PC Commit)
+    max_upload_size=50 * 1024 * 1024,  # Лимит на размер файла (50 МБ)
+
+    # --- 6. SEO И ДИНАМИЧЕСКИЙ РЕНДЕРИНГ (plugins.seo) ---
+    enable_seo=False,                  # SSR-перехват поисковых краулеров
+    sitemap_host="https://my-app.com", # Хост для генерации /sitemap.xml
 )
 ```
 
-Если секция `auth` не указана в YAML, плагин автоматически использует безопасные значения по умолчанию (30 дней, 10 сессий).
+### Справочник параметров `RsgiWsrpcApp`:
+
+| Параметр | Тип | По умолчанию | Описание |
+| :--- | :--- | :--- | :--- |
+| `static_dir` | `str \| None` | `None` | Путь к папке со статикой (раздается нативно через Rust Zero-Copy). |
+| `index_file` | `str \| None` | `"index.html"` | Имя индексного файла, отдаваемого на корневой `GET /`. |
+| `cors` | `bool` | `True` | Включение CORS-заголовков и preflight-ответов `OPTIONS`. |
+| `cors_origins` | `str \| list[str]`| `"*"` | Разрешенные домены/источники для CORS. |
+| `max_message_size` | `int` | `10 * 1024 * 1024` | Максимальный размер входящего WebSocket-сообщения (10 МБ). |
+| `database_url` | `str` | `"sqlite+aiosqlite:///app.db"` | URL подключения SQLAlchemy (Postgres, SQLite, MySQL). |
+| `db_echo` | `bool` | `False` | Логирование выполняемых SQL-запросов в терминал. |
+| `secret_key` | `str` | `"dev-secret-key..."` | Секретный ключ для подписи токенов и сессий. |
+| `login_rpc` | `str` | `"login."` | Префикс публичных методов авторизации для гостей. |
+| `token_expire_hours`| `int` | `720` (30 дней) | Срок действия сессионного токена. |
+| `password_iterations`| `int` | `600_000` | Число итераций PBKDF2-SHA256 (стандарт OWASP). |
+| `auth_timeout` | `int` | `0` | Секунды на авторизацию после подключения (`0` = отключено). |
+| `guest_idle_timeout`| `int` | `900` (15 мин) | Таймаут неактивности для гостевых сокетов. |
+| `user_idle_timeout` | `int` | `3600` (1 час) | Таймаут неактивности для авторизованных пользователей. |
+| `oauth` | `list` | `[]` | Список типизированных провайдеров (`VkOAuth`, `YandexOAuth`). |
+| `files_path` | `str` | `"./uploads"` | Папка постоянного хранения загруженных файлов. |
+| `max_upload_size` | `int` | `50 * 1024 * 1024` | Максимальный объем загружаемого файла (50 МБ). |
+| `backplane_url` | `str \| None` | `None` | Брокер для масштабирования (`redis://...`) при `workers > 1`. |
+| `enable_seo` | `bool` | `False` | Авто-определение поисковых ботов и отдача SSR HTML. |
+| `sitemap_host` | `str \| None` | `None` | Домен для генерации карты сайта `/sitemap.xml`. |
+
+Все параметры имеют безопасные значения по умолчанию: вы указываете только то, что хотите переопределить.
 
 ---
 

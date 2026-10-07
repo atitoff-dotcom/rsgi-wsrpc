@@ -56,19 +56,31 @@ class DefaultIdentityProvider:
         from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
         user = current_user_ctx.get()
         if user:
-            return getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
+            uid = getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
+            if isinstance(uid, int):
+                return uid
         user = getattr(session, "user", None) or getattr(getattr(session, "data", None), "user", None)
-        if user:
-            return getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
-        if hasattr(session, "user_id"):
-            return getattr(session, "user_id")
+        if user and not callable(user):
+            uid = getattr(user, "id", None) if not isinstance(user, dict) else user.get("id")
+            if isinstance(uid, int):
+                return uid
+        raw_uid = getattr(session, "user_id", None)
+        if isinstance(raw_uid, int):
+            return raw_uid
         data = getattr(session, "data", None)
-        if data and hasattr(data, "user_id"):
-            return getattr(data, "user_id")
+        if data and not callable(data):
+            uid = getattr(data, "user_id", None)
+            if isinstance(uid, int):
+                return uid
         transport = current_transport_ctx.get()
-        if transport and hasattr(getattr(transport, "data", None), "user_id"):
-            return getattr(transport.data, "user_id")
+        if transport and getattr(transport, "data", None):
+            t_data = getattr(transport, "data", None)
+            if not callable(t_data):
+                uid = getattr(t_data, "user_id", None)
+                if isinstance(uid, int):
+                    return uid
         return None
+
 
     def user_name(self, session: Any) -> str:
         from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
@@ -86,8 +98,7 @@ class DefaultIdentityProvider:
     def is_superuser(self, user_id: Optional[int]) -> bool:
         from rsgi_wsrpc.core.session import current_user_ctx, current_transport_ctx
         from rsgi_wsrpc.core.lib.config import settings
-        from rsgi_wsrpc.core.constants import UserRole
-
+        from rsgi_wsrpc.core.constants import ADMIN_ROLE
 
         # 1. Проверка активного сокета/сессии на роль ADMIN или сессию по Cookie
         transport = current_transport_ctx.get()
@@ -97,19 +108,19 @@ class DefaultIdentityProvider:
                 if token:
                     from .auth import get_crud_session
                     sdata = get_crud_session(token)
-                    if sdata and sdata.get("role") in ("admin", "ADMIN", UserRole.ADMIN):
+                    if sdata and sdata.get("role") in ("admin", "ADMIN", ADMIN_ROLE):
                         return True
 
             role = getattr(transport, "user_role", None)
             if hasattr(role, "value"):
                 role = role.value
-            if role in ("admin", "ADMIN", UserRole.ADMIN):
+            if role in ("admin", "ADMIN", ADMIN_ROLE):
                 return True
 
             roles = getattr(transport, "user_roles", [])
             for r in roles:
                 val = r.value if hasattr(r, "value") else r
-                if val in ("admin", "ADMIN", UserRole.ADMIN):
+                if val in ("admin", "ADMIN", ADMIN_ROLE):
                     return True
 
             data = getattr(transport, "data", None)
@@ -117,21 +128,41 @@ class DefaultIdentityProvider:
                 data_role = getattr(data, "user_role", None)
                 if hasattr(data_role, "value"):
                     data_role = data_role.value
-                if data_role in ("admin", "ADMIN", UserRole.ADMIN):
+                if data_role in ("admin", "ADMIN", ADMIN_ROLE):
                     return True
 
         # 3. Проверка пользователя в контексте auth
         user = current_user_ctx.get()
         if user:
             role = getattr(user, "role", None) if not isinstance(user, dict) else user.get("role")
-            if role in ("admin", "superuser", 1, "ADMIN", UserRole.ADMIN):
+            if role in ("admin", "superuser", 1, "ADMIN", ADMIN_ROLE):
                 return True
             if getattr(user, "is_superuser", False) if not isinstance(user, dict) else user.get("is_superuser", False):
                 return True
         return False
 
     def has_permission(self, user_id: Optional[int], perm: str) -> bool:
-        return self.is_superuser(user_id)
+        if self.is_superuser(user_id):
+            return True
+        from rsgi_wsrpc.core.session import current_transport_ctx
+        transport = current_transport_ctx.get()
+        data = getattr(transport, "data", None) if transport else None
+        if data:
+            perms = getattr(data, "permissions", None) or getattr(data, "user_permissions", None)
+            if perms:
+                if "*" in perms or perm in perms:
+                    return True
+                if ":" in perm:
+                    model_prefix = perm.split(":")[0] + ":*"
+                    if model_prefix in perms:
+                        return True
+        # Авторизованным пользователям разрешены базовые операции (ограничиваются через RLS scope)
+        if user_id is not None:
+            action = perm.split(":")[-1] if ":" in perm else perm
+            if action in ("read", "create", "update", "delete"):
+                return True
+        return False
+
 
     async def effective_user_ids(self, user_id: int, model_name: str, db: AsyncSession) -> Set[int]:
         return {user_id} if user_id is not None else set()
@@ -172,9 +203,23 @@ async def create_access_context(
     db: AsyncSession
 ) -> AccessContext:
     """Создает предвычисленный контекст доступа для текущего запроса."""
+    from rsgi_wsrpc.core.constants import ADMIN_ROLE
     uid = provider.user_id(session)
     u_name = provider.user_name(session)
     is_super = provider.is_superuser(uid)
+
+    if not is_super and session:
+        role = getattr(session, "user_role", None) or getattr(getattr(session, "data", None), "user_role", None)
+        if hasattr(role, "value"):
+            role = role.value
+        if role in ("admin", "ADMIN", ADMIN_ROLE):
+            is_super = True
+        roles = getattr(session, "user_roles", [])
+        for r in roles:
+            val = r.value if hasattr(r, "value") else r
+            if val in ("admin", "ADMIN", ADMIN_ROLE):
+                is_super = True
+                break
 
     if is_super or uid is None:
         eff_ids = {uid} if uid is not None else set()

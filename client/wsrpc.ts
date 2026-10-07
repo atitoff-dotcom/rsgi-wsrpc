@@ -39,12 +39,25 @@ export function getWsUrl(): string {
         const isHttps = window.location.protocol === 'https:';
         const wsProto = isHttps ? 'wss:' : 'ws:';
         
-        // На удаленном сервере (stage.agrita.ru и др.) проксируем через Nginx /ws
-        if (isHttps || (!['5173', '4173'].includes(window.location.port) && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
-            return `${wsProto}//${window.location.host}/ws`;
+        // Локальная разработка через Vite dev-сервер (5173/4173): бэкенд Granian на порту 8080
+        if (['5173', '4173'].includes(window.location.port)) {
+            const host = window.location.hostname || '127.0.0.1';
+            const url = `ws://${host}:8080/`;
+            console.info(`[WSRPC getWsUrl] Vite dev server detected -> ${url}`);
+            return url;
         }
-        // Локальная разработка: бэкенд Granian на порту 8080
-        return 'ws://127.0.0.1:8080/';
+        
+        // На удаленном HTTPS сервере проксируем через Nginx /ws
+        if (isHttps) {
+            const url = `wss://${window.location.host}/ws`;
+            console.info(`[WSRPC getWsUrl] HTTPS production detected -> ${url}`);
+            return url;
+        }
+        
+        // Прямое подключение к серверу Granian (по localhost, IP или домену на HTTP)
+        const url = `${wsProto}//${window.location.host}/`;
+        console.info(`[WSRPC getWsUrl] Direct connection -> ${url}`);
+        return url;
     }
     return 'ws://127.0.0.1:8080/';
 }
@@ -63,13 +76,20 @@ export function unpackTabular(data: any): any {
 
     if (data.$tabular === true && Array.isArray(data.fields) && Array.isArray(data.rows)) {
         const fields = data.fields;
-        return data.rows.map((row: any[]) => {
+        const items = data.rows.map((row: any[]) => {
             const obj: Record<string, any> = {};
             for (let i = 0; i < fields.length; i++) {
                 obj[fields[i]] = row[i];
             }
             return obj;
         });
+
+        const extraKeys = Object.keys(data).filter(k => k !== '$tabular' && k !== 'fields' && k !== 'rows');
+        if (extraKeys.length === 0) {
+            return items;
+        }
+
+        return { ...data, items };
     }
 
     if (Array.isArray(data)) {
@@ -278,8 +298,13 @@ export class BinaryWSRPC {
      * Подписка на событие / нотификацию от сервера с возвратом функции отписки
      */
     on(event: string, handler: (data: any) => void): () => void {
-        this.register(event, handler);
+        console.info(`[WSRPC] 📡 rpc.on("${event}") зарегистрирован`);
+        this.register(event, (params: any) => {
+            console.info(`[WSRPC] ⚡ Событие "${event}" получено:`, params);
+            return handler(params);
+        });
         return () => {
+            console.info(`[WSRPC] 🔕 rpc.on("${event}") отписка`);
             this.serverMethods.delete(event);
         };
     }
@@ -290,8 +315,10 @@ export class BinaryWSRPC {
     async request(method: string, params: any = {}, timeoutMs = 15000): Promise<any> {
         if (this.status !== 'CONNECTED' || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
             try {
+                console.info(`[WSRPC] request("${method}") ожидает подключения...`);
                 await this.connect();
             } catch (err) {
+                console.error(`[WSRPC] request("${method}") ошибка авто-подключения:`, err);
                 return Promise.reject(err);
             }
         }
@@ -314,6 +341,7 @@ export class BinaryWSRPC {
 
             const rpcId = this.idCounter++;
             const payload = { jsonrpc: '2.0', method, params, id: rpcId };
+            console.debug(`[WSRPC] ⬆️ Запрос [ID: ${rpcId}] -> "${method}":`, params);
 
             // Таймер таймаута для предотвращения утечки промисов
             const timeoutId = window.setTimeout(() => {
@@ -439,8 +467,10 @@ export class BinaryWSRPC {
             this.streamListeners.delete(rpcId);
 
             if ('error' in data) {
+                console.warn(`[WSRPC] ❌ Ошибка от сервера [ID: ${rpcId}]:`, data.error);
                 pending.reject(data.error.message || data.error);
             } else {
+                console.debug(`[WSRPC] ✅ Ответ сервера [ID: ${rpcId}]:`, data.result);
                 pending.resolve(unpackTabular(data.result));
             }
             return;
@@ -449,6 +479,7 @@ export class BinaryWSRPC {
         // 3. Запрос от сервера к нам (симметричный RPC)
         if ('method' in data) {
             const method = data.method;
+            console.info(`[WSRPC] 📥 Входящий вызов/нотификация от сервера: "${method}"`, data.params);
             const handler = this.serverMethods.get(method);
             if (!handler) {
                 if (rpcId !== null && rpcId !== undefined) {

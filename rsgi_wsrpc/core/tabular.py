@@ -68,10 +68,16 @@ def unpack_tabular(data: Any) -> Any:
         if data.get("$tabular") is True and "fields" in data and "rows" in data:
             fields = data["fields"]
             rows = data["rows"]
-            return [
+            items = [
                 dict(zip(fields, row))
                 for row in rows
             ]
+            other_keys = [k for k in data.keys() if k not in ("$tabular", "fields", "rows")]
+            if not other_keys:
+                return items
+            res = dict(data)
+            res["items"] = items
+            return res
         # Рекурсивная распаковка вложенных структур
         return {k: unpack_tabular(v) for k, v in data.items()}
 

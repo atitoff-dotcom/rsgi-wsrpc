@@ -25,7 +25,6 @@ from rsgi_wsrpc.core.session import (
     ACTIVE_SESSIONS_SET, current_rpc_id_ctx, current_transport_ctx
 )
 from rsgi_wsrpc.core.tabular import tabular_response
-from rsgi_wsrpc.core.constants import UserRole
 from rsgi_wsrpc.core.logger import logger
 from rsgi_wsrpc.plugins.db import async_session
 from rsgi_wsrpc.plugins.broadcast import broadcast_notification
@@ -40,26 +39,36 @@ except ImportError:
 
 class DemoSessionData:
     """Lightweight session context object for showcase demonstration."""
-    def __init__(self, username: str = "guest_user", role: str = "guest", session_id: int = 1):
+    def __init__(self, username: str = "guest_user", role: str = "guest", session_id: int = 1, user_id: Optional[int] = None):
         self.username = username
         self.role_name = role
         self.session_id = session_id
-        self.user_id = 1
-        if role == "admin":
-            self.user_role = UserRole.ADMIN
-            self.user_roles = [UserRole.ADMIN, UserRole.USER]
+        if user_id is not None:
+            self.user_id = user_id
+        elif role == "admin":
+            self.user_id = 1
         elif role == "user":
-            self.user_role = UserRole.USER
-            self.user_roles = [UserRole.USER]
+            self.user_id = 2
         else:
-            self.user_role = UserRole.GUEST
-            self.user_roles = [UserRole.GUEST]
+            self.user_id = None
+
+        if role == "admin":
+            self.user_role = "admin"
+            self.user_roles = ["admin", "user"]
+        elif role == "user":
+            self.user_role = "user"
+            self.user_roles = ["user"]
+        else:
+            self.user_role = None
+            self.user_roles = []
 
 
 def get_current_role(session) -> str:
     """Safely extracts role string from session or session.data."""
     target = getattr(session, "data", None) or session
-    role = getattr(target, "user_role", None) or getattr(session, "user_role", UserRole.GUEST)
+    role = getattr(target, "user_role", None) or getattr(session, "user_role", None)
+    if not role:
+        return "guest"
     if hasattr(role, "value"):
         return role.value
     return str(role)
@@ -99,27 +108,54 @@ async def system_info(session, params: dict):
 # --- 2. TABULAR COMPRESSION (RFC 0002) & TASKS ---
 
 @rpc_method("tasks.list", public=True)
-@tabular_response(fields=["id", "title", "completed", "priority", "created_at"])
-async def list_tasks(session: JsonRpcSession, params: dict):
+@tabular_response(fields=["id", "title", "completed", "priority", "owner_id", "created_at"])
+async def list_tasks(session: JsonRpcSession, params: dict = None):
     """
-    Returns tasks in compressed tabular format RFC 0002 ($tabular: true).
-    Column names are sent once in 'fields', rows are a 2D matrix in 'rows'.
-    Reduces wire traffic by 50-70% for lists.
+    Получение списка задач в сжатом табличном формате (RFC 0002).
+
+    Возвращает список задач с поддержкой сжатия RFC 0002 ($tabular: true).
+    Демонстрирует фильтрацию Row-Level Security (RLS) по владельцу (owner_id).
     """
+    params = params or {}
+    transport = current_transport_ctx.get() or session
+    data = getattr(transport, "data", None) or getattr(session, "data", None)
+    uid = getattr(data, "user_id", None)
+    role = getattr(data, "role_name", "guest")
+    only_mine = params.get("only_mine", False)
+
     async with async_session() as db:
-        result = await db.execute(select(Task).order_by(Task.id.desc()))
+        query = select(Task)
+        if (only_mine or role == "user") and uid:
+            query = query.where(Task.owner_id == uid)
+        elif only_mine and not uid:
+            return []
+
+        result = await db.execute(query.order_by(Task.id.desc()))
         tasks = result.scalars().all()
         return [t.to_dict() for t in tasks]
 
 
 @rpc_method("tasks.list_raw_json", public=True)
-async def list_tasks_raw_json(session: JsonRpcSession, params: dict):
+async def list_tasks_raw_json(session: JsonRpcSession, params: dict = None):
     """
     Returns the exact same tasks WITHOUT tabular compression (regular list of dicts).
     Used on the client for live side-by-side wire size comparison.
     """
+    params = params or {}
+    transport = current_transport_ctx.get() or session
+    data = getattr(transport, "data", None) or getattr(session, "data", None)
+    uid = getattr(data, "user_id", None)
+    role = getattr(data, "role_name", "guest")
+    only_mine = params.get("only_mine", False)
+
     async with async_session() as db:
-        result = await db.execute(select(Task).order_by(Task.id.desc()))
+        query = select(Task)
+        if (only_mine or role == "user") and uid:
+            query = query.where(Task.owner_id == uid)
+        elif only_mine and not uid:
+            return []
+
+        result = await db.execute(query.order_by(Task.id.desc()))
         tasks = result.scalars().all()
         return [t.to_dict() for t in tasks]
 
@@ -140,8 +176,12 @@ async def add_task(session: JsonRpcSession, params: dict):
     if priority not in ("low", "normal", "high"):
         priority = "normal"
 
+    transport = current_transport_ctx.get() or session
+    data = getattr(transport, "data", None) or getattr(session, "data", None)
+    owner_id = getattr(data, "user_id", None) or params.get("owner_id") or 1
+
     async with async_session() as db:
-        task = Task(title=title, priority=priority, completed=False)
+        task = Task(title=title, priority=priority, completed=False, owner_id=owner_id)
         db.add(task)
         await db.commit()
         await db.refresh(task)
@@ -307,8 +347,9 @@ async def send_announcement(session, params: dict):
 # --- 7. ROLES & RBAC (DEMO AUTH) ---
 
 DEMO_USERS = {
-    "admin": {"password": "admin123", "role": "admin", "name": "Администратор"},
-    "user": {"password": "user123", "role": "user", "name": "Пользователь"},
+    "admin": {"user_id": 1, "password": "admin123", "role": "admin", "name": "Администратор (ID #1)"},
+    "user": {"user_id": 2, "password": "user123", "role": "user", "name": "Alice (ID #2)"},
+    "bob": {"user_id": 3, "password": "bob123", "role": "user", "name": "Bob (ID #3)"},
 }
 
 DEMO_TOKENS: Dict[str, dict] = {}
@@ -320,7 +361,7 @@ def authenticate_credentials(username: str, password: str) -> Optional[dict]:
     if u in DEMO_USERS:
         expected = DEMO_USERS[u]
         if password == expected["password"] or password == u:
-            return {"username": u, "role": expected["role"], "name": expected["name"]}
+            return {"username": u, "role": expected["role"], "name": expected["name"], "user_id": expected["user_id"]}
     return None
 
 
@@ -328,14 +369,14 @@ def authenticate_credentials(username: str, password: str) -> Optional[dict]:
 async def auth_login(session, params: dict):
     """
     Аутентификация с проверкой логина и пароля.
-    Доступны demo-аккаунты: admin / admin123 и user / user123.
+    Доступны demo-аккаунты: admin / admin123, user / user123 (Alice), bob / bob123.
     """
     username = params.get("username", "")
     password = params.get("password", "")
 
     user_info = authenticate_credentials(username, password)
     if not user_info:
-        raise RPCError(-32602, "Неверный логин или пароль (используйте admin/admin123 или user/user123)")
+        raise RPCError(-32602, "Неверный логин или пароль (используйте admin/admin123, user/user123 или bob/bob123)")
 
     transport = current_transport_ctx.get() or session
     sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
@@ -347,12 +388,13 @@ async def auth_login(session, params: dict):
     # Если логинится администратор, регистрируем его также в сессиях CRUD-плагина
     if user_info["role"] == "admin":
         from rsgi_wsrpc.plugins.crud import create_crud_session
-        create_crud_session(user_info)
+        create_crud_session(user_info, token=token)
 
     demo_data = DemoSessionData(
         username=user_info["username"],
         role=user_info["role"],
-        session_id=sid
+        session_id=sid,
+        user_id=user_info["user_id"]
     )
 
     if hasattr(transport, "data"):
@@ -366,6 +408,7 @@ async def auth_login(session, params: dict):
         "username": user_info["username"],
         "name": user_info["name"],
         "role": user_info["role"],
+        "user_id": user_info["user_id"],
     }
 
 
@@ -379,7 +422,7 @@ async def auth_logout(session, params: dict = None):
     transport = current_transport_ctx.get() or session
     sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
 
-    demo_data = DemoSessionData(username="guest_user", role="guest", session_id=sid)
+    demo_data = DemoSessionData(username="guest_user", role="guest", session_id=sid, user_id=None)
     if hasattr(transport, "data"):
         transport.data = demo_data
     if hasattr(session, "data"):
@@ -388,6 +431,7 @@ async def auth_logout(session, params: dict = None):
     return {"success": True, "role": "guest"}
 
 
+@rpc_method("auth.me", public=True)
 @rpc_method("auth.whoami", public=True)
 async def auth_whoami(session, params: dict = None):
     """Возвращает информацию о текущей роли и сессии сокета."""
@@ -399,12 +443,14 @@ async def auth_whoami(session, params: dict = None):
             "username": getattr(data, "username", ""),
             "role": getattr(data, "role_name", "guest"),
             "name": getattr(data, "username", "Пользователь"),
+            "user_id": getattr(data, "user_id", None),
         }
     return {
         "authenticated": False,
         "username": "guest_user",
         "role": "guest",
         "name": "Гость",
+        "user_id": None,
     }
 
 
@@ -418,10 +464,12 @@ async def set_role(session, params: dict):
     transport = current_transport_ctx.get() or session
     sid = getattr(transport, "session_id", getattr(session, "session_id", 1))
 
+    uid = 1 if role_name == "admin" else (2 if role_name == "user" else None)
     demo_data = DemoSessionData(
-        username=f"user_{sid}",
+        username=f"user_{sid}" if role_name != "guest" else "guest_user",
         role=role_name,
-        session_id=sid
+        session_id=sid,
+        user_id=uid
     )
 
     if hasattr(transport, "data"):
@@ -433,11 +481,12 @@ async def set_role(session, params: dict):
     return {
         "session_id": sid,
         "role": role_val,
+        "user_id": uid,
     }
 
 
 
-@rpc_method("admin.system_info", role=UserRole.ADMIN)
+@rpc_method("admin.system_info", role="admin")
 async def admin_system_info(session: JsonRpcSession, params: dict):
     """
     Protected method: accessible ONLY with admin role.
@@ -461,7 +510,12 @@ async def admin_system_info(session: JsonRpcSession, params: dict):
 @rpc_method("documents.list", public=True)
 @tabular_response(fields=["id", "title", "category", "views", "updated_at"])
 async def list_documents(session: JsonRpcSession, params: dict):
-    """Documents list demonstrating CRUD plugin and tabular compression."""
+    """
+    Просмотр архива документов и отчетов.
+
+    Возвращает список документов в сжатом табличном формате RFC 0002.
+    Демонстрирует раздачу данных для публичных гостей и авторизованных пользователей.
+    """
     async with async_session() as db:
         result = await db.execute(select(Document).order_by(Document.id.desc()))
         docs = result.scalars().all()

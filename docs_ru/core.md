@@ -74,10 +74,10 @@
 Каждый RPC-метод регистрируется с помощью декоратора `@rpc_method` (или `@app.rpc` при использовании `RsgiWsrpcApp`):
 
 ```python
-from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError, UserRole
+from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError
 
 # 1. Автоматическая распаковка именованных параметров (kwargs)
-@rpc_method("calculator.add", public=True)
+@rpc_method("calculator.add")
 async def calculate_sum(a: int = 0, b: int = 0):
     return {"sum": a + b}
 
@@ -91,11 +91,11 @@ async def create_task(session: JsonRpcSession, title: str, priority: int = 1):
 async def echo_raw(session: JsonRpcSession, params: dict):
     return params
 
-# 4. Метод с ограничением доступа по роли
-@rpc_method("admin.restart_service", role=UserRole.ADMIN)
+# 4. Защищенный административный метод (права настраиваются в БД через CRUD)
+@rpc_method("admin.restart_service")
 async def restart_service(session: JsonRpcSession):
-    # Если у сессии нет прав администратора, ядро автоматически
-    # вернет ошибку JSON-RPC клиенту: "Доступ запрещен: требуется роль admin"
+    # Если у пользователя нет прав администратора, ядро автоматически
+    # вернет ошибку JSON-RPC клиенту: "Доступ к методу 'admin.restart_service' запрещен"
     return {"status": "restarting"}
 ```
 
@@ -108,30 +108,47 @@ async def ping():
     return {"status": "pong"}
 ```
 
-### Кастомные роли и расширение ролевой модели (Custom Roles)
+### Ролевая модель и контроль доступа (Single Source of Truth — БД)
 
-Ядро фреймворка не навязывает жесткий список ролей. Класс `UserRole` специально унаследован от стандартного типа `str`, что позволяет приложению определять любые собственные роли предметной области:
+Во фреймворке действует строгий архитектурный принцип: **в прикладном коде нет жестко закрепленных ролей и запретов**. Все роли, права доступа к RPC-методам и политики моделей настраиваются и хранятся **исключительно в базе данных** через панель управления CRUD.
+
+Код методов пишется максимально чисто — без хардкода ролей в декораторах:
 
 ```python
-# 1. Объявление собственных ролей в приложении (app/roles.py)
-from core.constants import UserRole
-
-class AppRole(UserRole):
-    MODERATOR = "moderator"
-    OPERATOR  = "operator"
-    MANAGER   = "manager"
-
-@rpc_method("content.moderate", role=AppRole.MODERATOR)
-async def moderate_content(session: JsonRpcSession, params: dict):
-    return {"status": "approved"}
-
-# 2. Использование прямых строк без классов
-@rpc_method("orders.dispatch", role="operator")
-async def dispatch_order(session: JsonRpcSession, params: dict):
-    return {"status": "dispatched"}
+@app.rpc("orders.dispatch")
+async def dispatch_order(order_id: int):
+    # Бизнес-логика выполнения заказа
+    return {"status": "dispatched", "order_id": order_id}
 ```
 
-> **Правило Superadmin Bypass**: Пользователь с ролью `admin` считается суперадминистратором ядра и имеет безусловный доступ ко всем защищенным RPC-методам, независимо от указанного ограничения роли (`role="moderator"`, `role="operator"` и др.).
+#### Ключевые правила безопасности:
+
+1. **Неавторизованный посетитель (Гость)**:
+   * Не имеет учетной записи и роли (`None`).
+   * Доступ разрешен только к методам, помеченным как публичные (`is_public = True` в таблице `auth_rpc_permission`), и методам аутентификации (`login.*`).
+   * Проверка публичности выполняется за `O(1)` в RAM по in-memory кэшу ядра (`PUBLIC_RPC_METHODS`).
+
+2. **Зарегистрированный пользователь**:
+   * При первичной регистрации через `login.register` или OAuth пользователю автоматически присваивается базовая системная роль **`user`**.
+   * Далее администратор через CRUD может изменить его роль или выдать дополнительные роли предметной области (`manager`, `editor`, `operator`, `buyer` и т.д.).
+
+3. **Права доступа к RPC-методам (`auth_rpc_permission`)**:
+   * При старте сервера Service Discovery автоматически сканирует все методы `@app.rpc` и синхронизирует их с таблицей `auth_rpc_permission`.
+   * Администратор в интерфейсе CRUD привязывает методы к ролям:
+     * Точное имя метода: `"orders.dispatch"`, `"reports.monthly"`.
+     * Маска с префиксом (Wildcard): `"orders.*"`, `"catalog.*"`.
+   * При входе пользователя список разрешенных методов кэшируется прямо в сессии сокета (`session.data.allowed_rpc_methods`), обеспечивая мгновенную проверку `O(1)` в памяти без повторных обращений к БД.
+
+4. **Системные роли (Built-in Immutable Roles)**:
+   * В системе существуют ровно две защищенные системные роли: **`admin`** и **`user`**.
+   * Их невозможно удалить (`crud.delete`) или переименовать (`crud.update_cell`) через CRUD — ядро отклонит операцию с ошибкой.
+   * Роль **`admin`** обладает привилегией **Superadmin Bypass** (безусловный доступ ко всем RPC-методам) и имеет исключительный доступ к управлению CRUD-панелью (`/crud`).
+
+5. **Первый запуск системы (CLI Bootstrap)**:
+   * Для создания первого администратора системы используется встроенная CLI-утилита:
+   ```bash
+   python -m rsgi_wsrpc createsuperuser --username admin --password secret
+   ```
 
 ### Контекстные переменные (`ContextVars`)
 
@@ -666,23 +683,52 @@ rpc.authInterceptor = async () => {
 
 ## 9. Единый класс приложения: RsgiWsrpcApp
 
-Начиная с версии `0.3.3`, создание и запуск приложений на `rsgi-wsrpc` унифицированы в классе `RsgiWsrpcApp`:
+Начиная с версии `0.4.3`, создание и запуск приложений на `rsgi-wsrpc` унифицированы в классе `RsgiWsrpcApp`. Все настройки ядра и официальных плагинов передаются в **единой точке входа**:
 
 ```python
-from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, VkOAuth, YandexOAuth, tabular_response, RPCError
 
 app = RsgiWsrpcApp(
-    secret_key="production-secret-key",
-    database_url="sqlite+aiosqlite:///app.db",
-    static_dir="./public",       # Нативная Zero-Copy раздача статики (Rust RSGI)
-    index_file="index.html",     # Автоматическая отдача на GET /
-    login_rpc="login.",          # Префикс методов, доступных гостям
-    cors=True,                   # Автоматический CORS preflight OPTIONS
-    backplane=None               # Шина для multi-worker масштабирования (опционально)
+    # --- Сеть и HTTP ---
+    static_dir="./public",             # Нативная Zero-Copy раздача статики (Rust RSGI)
+    index_file="index.html",           # Автоматическая отдача на GET /
+    cors=True,                         # Автоматический CORS preflight OPTIONS
+    cors_origins="*",                  # Разрешенные origins
+    max_message_size=10 * 1024 * 1024, # Лимит размера входящего WebSocket-сообщения (10 МБ)
+
+    # --- База данных (plugins.db) ---
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    db_echo=False,                     # SQL-логирование в консоль
+
+    # --- Безопасность и сессии (plugins.auth) ---
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    login_rpc="login.",                # Префикс методов, доступных гостям
+    token_expire_hours=24 * 30,        # Срок жизни сессии (30 дней)
+    auth_timeout=0,                    # Таймаут на вход (0 = гости не отключаются)
+    guest_idle_timeout=900,            # Кик неактивных гостей через 15 минут
+    user_idle_timeout=3600,            # Кик неактивных пользователей через 1 час
+
+    # --- Внешняя авторизация (OAuth) ---
+    oauth=[
+        VkOAuth(client_id="12345", client_secret="секрет_vk"),
+        YandexOAuth(client_id="67890", client_secret="секрет_ya"),
+    ],
+
+    # --- Файловое хранилище (plugins.files) ---
+    files_path="./uploads",            # Каталог загрузок (2PC Commit)
+    max_upload_size=50 * 1024 * 1024,  # Лимит на размер одного файла (50 МБ)
+
+    # --- Масштабирование (backplane) ---
+    backplane_url=None,                # "redis://127.0.0.1:6379/0" при workers > 1
+
+    # --- SEO и SSR (plugins.seo) ---
+    enable_seo=False,                  # Перехват поисковых ботов (Яндекс/Google)
+    sitemap_host="https://my-app.com", # Базовый домен для /sitemap.xml
 )
 
 # Регистрация RPC-методов через декоратор приложения
-@app.rpc("tasks.get_all", public=False)
+@app.rpc("tasks.get_all")
 @tabular_response(fields=["id", "title"])
 async def get_tasks():
     return [{"id": 1, "title": "Задача 1"}]
@@ -692,7 +738,32 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080, workers=1)
 ```
 
-### Возможности `RsgiWsrpcApp`:
+### Справочник параметров конструктора `RsgiWsrpcApp`:
+
+| Параметр | Тип | По умолчанию | Описание |
+| :--- | :--- | :--- | :--- |
+| `static_dir` | `str \| None` | `None` | Путь к директории фронтенда. Раздается через Rust Zero-Copy (`proto.response_file`). |
+| `index_file` | `str \| None` | `"index.html"` | Имя индексного файла, отдаваемого на корневой `GET /`. |
+| `cors` | `bool` | `True` | Включение CORS-заголовков и автоматической обработки `OPTIONS` preflight. |
+| `cors_origins` | `str \| list[str]`| `"*"` | Разрешенные домены (origins) для CORS. |
+| `max_message_size` | `int` | `10 * 1024 * 1024` | Максимальный размер входящего WebSocket-фрейма (10 МБ). Защита от флуда. |
+| `database_url` | `str` | `"sqlite+aiosqlite:///app.db"` | URL подключения SQLAlchemy (Postgres, SQLite, MySQL). |
+| `db_echo` | `bool` | `False` | Логирование выполняемых SQL-запросов в терминал (удобно для отладки). |
+| `secret_key` | `str` | `"dev-secret-key..."` | Секретный ключ для подписи токенов и HMAC. |
+| `login_rpc` | `str` | `"login."` | Префикс методов, доступных гостям (наряду с методами с `is_public=True` в БД). |
+| `token_expire_hours`| `int` | `720` (30 дней) | Срок действия сессионного токена. |
+| `password_iterations`| `int` | `600_000` | Число итераций PBKDF2-SHA256 (стандарт безопасности OWASP). |
+| `auth_timeout` | `int` | `0` | Время в секундах на авторизацию после подключения (`0` = отключено). |
+| `guest_idle_timeout`| `int` | `900` (15 мин) | Таймаут неактивности для гостевых сокетов. |
+| `user_idle_timeout` | `int` | `3600` (1 час) | Таймаут неактивности для авторизованных пользователей. |
+| `oauth` | `list` | `[]` | Список типизированных провайдеров (`VkOAuth`, `YandexOAuth`). |
+| `files_path` | `str` | `"./uploads"` | Папка постоянного хранения загруженных файлов. |
+| `max_upload_size` | `int` | `50 * 1024 * 1024` | Максимальный объем загружаемого файла (50 МБ). |
+| `backplane_url` | `str \| None` | `None` | URL шины распределенного состояния (`redis://...`) при `workers > 1`. |
+| `enable_seo` | `bool` | `False` | Авто-определение поисковых ботов и отдача SSR HTML. |
+| `sitemap_host` | `str \| None` | `None` | Домен для генерации карты сайта `/sitemap.xml`. |
+
+### Ключевые преимущества `RsgiWsrpcApp`:
 1. **Rust Zero-Copy раздача статики**: Для файлов в `static_dir` используется нативный вызов Granian RSGI `proto.response_file`, минуя чтение байтов в Python-память.
 2. **Защита от Path Traversal**: Пути нормализуются с проверкой `resolve().startswith(static_dir)`. Попытки выйти за пределы каталога возвращают `403 Forbidden`.
 3. **Хуки жизненного цикла**: Автоматически реализует методы RSGI протокола `__rsgi_init__` и `__rsgi_del__`, выполняя зарегистрированные функции `@on_startup` и `@on_shutdown`.

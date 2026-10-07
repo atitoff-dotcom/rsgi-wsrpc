@@ -14,7 +14,7 @@ from rsgi_wsrpc.core.session import (
     ACTIVE_SESSIONS_SET
 )
 from rsgi_wsrpc.core.tabular import pack_tabular, unpack_tabular, tabular_response, is_tabular
-from rsgi_wsrpc.core.constants import UserRole
+from rsgi_wsrpc.core.constants import ADMIN_ROLE, DEFAULT_USER_ROLE, SYSTEM_ROLES
 from rsgi_wsrpc.core.router import http_route, HTTP_ROUTES
 from rsgi_wsrpc.core.http import extract_header, extract_query_params
 from rsgi_wsrpc.core.lifecycle import (
@@ -22,15 +22,18 @@ from rsgi_wsrpc.core.lifecycle import (
 )
 from rsgi_wsrpc.core.logger import logger, setup_logging
 from rsgi_wsrpc.core.lib.config import configure, get_config
+from rsgi_wsrpc.plugins.auth.oauth import VkOAuth, YandexOAuth
 from rsgi_wsrpc.app import RsgiWsrpcApp
 
 from rsgi_wsrpc import core
 from rsgi_wsrpc import plugins
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 
 __all__ = [
     "RsgiWsrpcApp",
+    "VkOAuth",
+    "YandexOAuth",
     "rpc_method",
     "RPCError",
     "JsonRpcSession",
@@ -43,7 +46,9 @@ __all__ = [
     "unpack_tabular",
     "tabular_response",
     "is_tabular",
-    "UserRole",
+    "ADMIN_ROLE",
+    "DEFAULT_USER_ROLE",
+    "SYSTEM_ROLES",
     "http_route",
     "HTTP_ROUTES",
     "extract_header",

@@ -19,7 +19,6 @@ from sqlalchemy import select, delete, or_
 from sqlalchemy.orm import selectinload
 
 from rsgi_wsrpc.core.session import rpc_method, RPCError, JsonRpcSession
-from rsgi_wsrpc.core.constants import UserRole
 from rsgi_wsrpc.core.security import generate_rsa_keypair, decrypt_rsa, create_access_token, verify_password
 from rsgi_wsrpc.core.logger import logger
 
@@ -144,14 +143,17 @@ async def _create_authenticated_session(
     # Гарантируем загрузку ролей и прав
     stmt_user = select(User).options(
         selectinload(User.roles).selectinload(Role.permissions),
-        selectinload(User.teams)
+        selectinload(User.roles).selectinload(Role.rpc_permissions),
+        selectinload(User.teams),
+        selectinload(User.permissions),
+        selectinload(User.rpc_permissions)
     ).where(User.id == user.id)
     user = (await db_session.execute(stmt_user)).scalar_one()
 
     user_context = user.get_permissions()
     user_roles = user.roles
-    role_name = user_roles[0].name if user_roles else "guest"
-    role_names = [r.name for r in user_roles] if user_roles else ["guest"]
+    role_name = user_roles[0].name if user_roles else "user"
+    role_names = [r.name for r in user_roles] if user_roles else ["user"]
 
     jwt_token, _, _ = create_access_token(
         user_id=user.id,
@@ -169,10 +171,11 @@ async def _create_authenticated_session(
         uid=user.id,
         user=user,
         user_name=user.login,
-        user_role=UserRole(role_name) if hasattr(UserRole, role_name) else role_name,
+        user_role=role_name,
         user_roles=role_names,
         session_db_id=ws_session.id,
         user_ctx=user_context,
+        allowed_rpc_methods=getattr(user_context, "allowed_rpc_methods", set()),
         send_request_cb=getattr(target, "send_request", None),
         send_stream_cb=getattr(target, "send_stream_chunk", None),
         close_cb=getattr(target, "close", None)
@@ -376,7 +379,10 @@ async def handle_whoami(session: JsonRpcSession, args: Dict[str, Any]) -> Dict[s
         async with async_session() as db_session:
             stmt = select(User).options(
                 selectinload(User.roles).selectinload(Role.permissions),
-                selectinload(User.teams)
+                selectinload(User.roles).selectinload(Role.rpc_permissions),
+                selectinload(User.teams),
+                selectinload(User.permissions),
+                selectinload(User.rpc_permissions)
             ).where(User.id == user_id)
             user = (await db_session.execute(stmt)).scalar_one_or_none()
             if not user:

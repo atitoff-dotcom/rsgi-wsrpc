@@ -40,11 +40,12 @@ Enterprise-ready authentication and authorization system supporting Row-Level Se
   - Every valid token refresh extends the token expiration window by `session_lifetime_days`.
   - Stale refresh tokens are cleaned up automatically.
   - Active session limit enforcement (`max_active_sessions`, default: 10 per user).
-- **Dynamic Database Roles & Permissions (`auth_role`, `auth_role_permission`)**:
+- **Dynamic Database Roles & Permissions (`auth_role`, `auth_role_permission`, `auth_rpc_permission`)**:
   - Roles are never hardcoded: the `auth_role` table allows provisioning arbitrary domain roles (`moderator`, `operator`, `manager`, `inspector`).
-  - Many-to-Many association: users can hold multiple active roles simultaneously.
-  - Granular permission matrix: `auth_role_permission` defines CRUD capabilities per model (`can_create`, `can_read`, `can_update`, `can_delete`, `create_global`, `read_global`).
-  - Upon login, user roles bind directly to the active socket session for instant `@rpc_method(role=...)` validation.
+  - Immutable system roles: the built-in `admin` and `user` roles are protected from deletion and renaming.
+  - Model permission matrix: `auth_role_permission` defines CRUD capabilities per model (`can_create`, `can_read`, `can_update`, `can_delete`, `create_global`, `read_global`).
+  - RPC method permissions: `auth_rpc_permission` manages the `is_public` flag and role-based access with wildcard support (`orders.*`).
+  - Discovery & Cache: Service Discovery auto-syncs methods on boot and loads public methods into an `O(1)` in-memory cache (`PUBLIC_RPC_METHODS`).
 - **Row-Level Security (RLS)**:
   - `BasicSecureModel` and `RowSecureModel` mixins.
   - Session event listeners filter queries automatically based on `current_user_ctx`.

@@ -53,14 +53,26 @@ class MockProto:
 
 @pytest.mark.asyncio
 async def test_app_config_initialization():
+    from rsgi_wsrpc import VkOAuth, YandexOAuth
+
     app = RsgiWsrpcApp(
         secret_key="custom-app-secret",
         password_iterations=750000,
-        login_rpc="custom_login."
+        login_rpc="custom_login.",
+        db_echo=True,
+        max_upload_size=50 * 1024 * 1024,
+        oauth=[
+            VkOAuth(client_id="vk-123", client_secret="vk-secret"),
+            YandexOAuth(client_id="ya-456", client_secret="ya-secret"),
+        ]
     )
     assert settings.security.get("secret_key") == "custom-app-secret"
     assert settings.security.get("password_iterations") == 750000
     assert settings.security.get("login_rpc") == "custom_login."
+    assert settings.get("db_echo") is True
+    assert settings.get("max_upload_size") == 50 * 1024 * 1024
+    assert settings.get("oauth")["vk"]["client_id"] == "vk-123"
+    assert settings.get("oauth")["yandex"]["client_id"] == "ya-456"
 
 
 @pytest.mark.asyncio
@@ -92,15 +104,28 @@ async def test_app_static_file_serving_and_traversal_protection():
 
         app = RsgiWsrpcApp(static_dir=tmp_dir, static_prefix="/static")
 
-        # 1. Valid static file
+        # 1. Valid static file with prefix
         scope = MockScope(proto="http", method="GET", path="/static/test.txt")
         proto = MockProto()
         await app(scope, proto)
         assert proto.status == 200
         assert proto.file_path == test_file
 
-        # 2. Path traversal attack
+        # 2. Valid static file directly without prefix (e.g. /assets/...)
+        scope = MockScope(proto="http", method="GET", path="/test.txt")
+        proto = MockProto()
+        await app(scope, proto)
+        assert proto.status == 200
+        assert proto.file_path == test_file
+
+        # 3. Path traversal attack with prefix
         scope = MockScope(proto="http", method="GET", path="/static/../../" + os.path.basename(secret_dir) + "/secret.txt")
+        proto = MockProto()
+        await app(scope, proto)
+        assert proto.status == 404
+
+        # 4. Path traversal attack without prefix
+        scope = MockScope(proto="http", method="GET", path="/../../" + os.path.basename(secret_dir) + "/secret.txt")
         proto = MockProto()
         await app(scope, proto)
         assert proto.status == 404

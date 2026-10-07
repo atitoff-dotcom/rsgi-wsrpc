@@ -16,9 +16,26 @@ current_session_ctx: ContextVar = ContextVar("current_session", default=None)
 current_rpc_id_ctx: ContextVar = ContextVar("current_rpc_id", default=None)
 current_user_ctx: ContextVar = ContextVar("current_user", default=None)
 
-# --- ГЛОБАЛЬНЫЕ РЕЕСТРЫ ---
 ACTIVE_SESSIONS_SET = set()
 RPC_REGISTRY = {}
+PUBLIC_RPC_METHODS = set()
+
+def register_public_method(name: str) -> None:
+    """Регистрирует имя метода или маску в глобальном кэше публичных методов."""
+    PUBLIC_RPC_METHODS.add(name)
+
+def unregister_public_method(name: str) -> None:
+    """Удаляет имя метода из глобального кэша публичных методов."""
+    PUBLIC_RPC_METHODS.discard(name)
+
+def is_public_rpc_method(method_name: str) -> bool:
+    """Проверяет публичность метода за O(1) в оперативной памяти."""
+    if method_name in PUBLIC_RPC_METHODS:
+        return True
+    for p in PUBLIC_RPC_METHODS:
+        if p.endswith(".*") and method_name.startswith(p[:-1]):
+            return True
+    return False
 
 class RPCError(Exception):
     """
@@ -39,12 +56,21 @@ class RPCError(Exception):
 
 
 
-def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False, public: bool = False, *args, **kwargs):
+def rpc_method(
+    name: str = None,
+    role: Optional[Any] = None,
+    http: bool = False,
+    public: bool = False,
+    description: Optional[str] = None,
+    *args,
+    **kwargs
+):
     """
     Декоратор для регистрации RPC-методов.
 
     :param role: Ограничить доступ по роли пользователя.
     :param public: Если True, метод доступен неавторизованным гостям даже при включенном login_rpc.
+    :param description: Человекочитаемое описание метода для интерфейса (по умолчанию берется из docstring).
     """
     def decorator(func):
         try:
@@ -61,20 +87,17 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
         is_generic_wrapper = has_var_pos and has_var_kw
         expects_session_and_params = len(param_names) == 2 and param_names[0] in ("session", "self", "s") and param_names[1] in ("params", "args", "data", "p")
 
+        # Извлекаем оригинальный docstring функции или явное описание
+        full_doc = description or inspect.getdoc(unwrapped) or inspect.getdoc(func) or getattr(func, "__doc__", None)
+
         async def wrapper(session, params):
-            """
-            Обертка для проверки прав доступа и вызова исходного хендлера.
-            """
             if role is not None:
-                from .constants import UserRole
-                user_role = getattr(session, "user_role", UserRole.GUEST)
-                user_roles = getattr(session, "user_roles", None)
-                allowed = (user_role == UserRole.ADMIN or user_role == role)
-                if not allowed and user_roles:
-                    allowed = (UserRole.ADMIN in user_roles or role in user_roles)
+                user_role = getattr(session, "user_role", None)
+                user_roles = getattr(session, "user_roles", [])
+                role_str = role.value if hasattr(role, "value") else str(role)
+                allowed = (user_role in ("admin", role_str)) or ("admin" in user_roles or role_str in user_roles)
                 if not allowed:
-                    role_repr = role.value if hasattr(role, "value") else role
-                    raise RPCError(-32003, f"Доступ запрещен: требуется роль {role_repr}")
+                    raise RPCError(-32003, f"Доступ запрещен: требуется роль {role_str}")
 
             if expects_session_and_params or is_generic_wrapper:
                 return await func(session, params)
@@ -97,9 +120,13 @@ def rpc_method(name: str = None, role: Optional[Any] = None, http: bool = False,
 
             return await func()
 
+        wrapper.__doc__ = full_doc
+        wrapper.__name__ = getattr(unwrapped, "__name__", "wrapper")
+        wrapper.__wrapped__ = unwrapped
         RPC_REGISTRY[method_name] = wrapper
         wrapper.http = http
         wrapper.public = public
+        wrapper.description = description
         return func
     return decorator
 
@@ -151,16 +178,17 @@ class JsonRpcSession:
 
     @property
     def user_role(self):
-        from .constants import UserRole
         if self.data and hasattr(self.data, "user_role"):
             return self.data.user_role
-        return UserRole.GUEST
+        return None
 
     @property
     def user_roles(self):
         if self.data and hasattr(self.data, "user_roles"):
             return self.data.user_roles
-        return [self.user_role]
+        if self.user_role:
+            return [self.user_role]
+        return []
 
     @property
     def cookies(self) -> Dict[str, str]:
@@ -285,12 +313,42 @@ class JsonRpcSession:
                     await self._send_error(rpc_id, -32601, f"Method '{method_name}' not found")
                     continue
 
-                # Проверка авторизации: гостям разрешены только login_rpc префикс или методы с public=True
+                # 1. Проверка публичного доступа (O(1) in-memory)
                 login_rpc = settings.security.get("login_rpc")
-                is_public_method = getattr(handler, "public", False)
-                if login_rpc and not self.authenticated and not is_public_method and not method_name.startswith(login_rpc):
+                is_public = (
+                    is_public_rpc_method(method_name)
+                    or getattr(handler, "public", False)
+                    or (bool(login_rpc) and method_name.startswith(login_rpc))
+                )
+
+                if not self.authenticated and not is_public:
                     await self._send_error(rpc_id, -32001, "Unauthorized.")
                     continue
+
+                # 2. Проверка прав авторизованного пользователя (O(1) in-memory)
+                if self.authenticated and not is_public:
+                    has_perm = True
+                    session_data = self.data
+                    if session_data:
+                        if hasattr(session_data, "has_rpc_permission"):
+                            has_perm = session_data.has_rpc_permission(method_name)
+                        else:
+                            role = getattr(session_data, "user_role", None) or getattr(self, "user_role", None)
+                            roles = getattr(session_data, "user_roles", None) or getattr(self, "user_roles", [])
+                            if role in ("admin", "ADMIN") or "admin" in roles or "ADMIN" in roles:
+                                has_perm = True
+                            elif hasattr(session_data, "allowed_rpc_methods"):
+                                allowed = session_data.allowed_rpc_methods
+                                has_perm = "*" in allowed or method_name in allowed
+                                if not has_perm:
+                                    for m in allowed:
+                                        if m.endswith(".*") and method_name.startswith(m[:-1]):
+                                            has_perm = True
+                                            break
+
+                    if not has_perm:
+                        await self._send_error(rpc_id, -32003, f"Доступ к методу '{method_name}' запрещен.")
+                        continue
 
                 task = asyncio.create_task(
                     self._run_rpc_handler(handler, method_name, rpc_id, params)

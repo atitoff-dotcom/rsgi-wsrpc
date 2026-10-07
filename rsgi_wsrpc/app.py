@@ -31,7 +31,9 @@ class RsgiWsrpcApp:
         # Безопасность и ядро
         secret_key: Optional[str] = None,
         database_url: Optional[str] = None,
+        db_echo: bool = False,
         files_path: Optional[str] = None,
+        max_upload_size: Optional[int] = None,
         login_rpc: Optional[str] = None,
         auth_timeout: Optional[int] = None,
         guest_idle_timeout: Optional[int] = None,
@@ -50,8 +52,11 @@ class RsgiWsrpcApp:
         static_dir: Optional[str] = None,
         static_prefix: str = "/static",
         index_file: Optional[str] = None,
-        # Плагины
+        # Внешняя авторизация и плагины
+        oauth: Optional[Union[List[Any], Dict[str, Any]]] = None,
+        backplane_url: Optional[str] = None,
         enable_seo: bool = False,
+        sitemap_host: Optional[str] = None,
         custom_settings: Optional[Dict[str, Any]] = None,
         **extra_settings: Any
     ):
@@ -61,8 +66,16 @@ class RsgiWsrpcApp:
             config_kwargs["secret_key"] = secret_key
         if database_url is not None:
             config_kwargs["database_url"] = database_url
+        if db_echo:
+            config_kwargs["db_echo"] = db_echo
         if files_path is not None:
             config_kwargs["files_path"] = files_path
+        if max_upload_size is not None:
+            config_kwargs["max_upload_size"] = max_upload_size
+        if backplane_url is not None:
+            config_kwargs["backplane_url"] = backplane_url
+        if sitemap_host is not None:
+            config_kwargs["sitemap_host"] = sitemap_host
         if login_rpc is not None:
             config_kwargs["login_rpc"] = login_rpc
         if auth_timeout is not None:
@@ -81,6 +94,18 @@ class RsgiWsrpcApp:
             config_kwargs["token_expire_hours"] = token_expire_hours
         if max_message_size is not None:
             config_kwargs.setdefault("custom", {})["max_message_size"] = max_message_size
+
+        if oauth:
+            oauth_dict: Dict[str, Any] = {}
+            if isinstance(oauth, list):
+                for prov in oauth:
+                    p_name = getattr(prov, "provider_name", None) or prov.__class__.__name__.lower().replace("oauth", "")
+                    oauth_dict[p_name] = {
+                        k: v for k, v in prov.__dict__.items() if not k.startswith("_")
+                    }
+            elif isinstance(oauth, dict):
+                oauth_dict = oauth
+            config_kwargs["oauth"] = oauth_dict
 
         if custom_settings:
             config_kwargs.setdefault("custom", {}).update(custom_settings)
@@ -117,9 +142,9 @@ class RsgiWsrpcApp:
 
     # --- ДЕКОРАТОРЫ ---
 
-    def rpc(self, name: Optional[str] = None, role: Optional[Any] = None, http: bool = False, public: bool = False):
+    def rpc(self, name: Optional[str] = None, role: Optional[Any] = None, http: bool = False, public: bool = False, description: Optional[str] = None):
         """Декоратор для регистрации JSON-RPC метода."""
-        return rpc_method(name=name, role=role, http=http, public=public)
+        return rpc_method(name=name, role=role, http=http, public=public, description=description)
 
     def route(self, path: str, methods: Optional[List[str]] = None):
         """Декоратор для регистрации HTTP-обработчика."""
@@ -233,15 +258,22 @@ class RsgiWsrpcApp:
 
         # 5. Раздача статики из static_dir
         if method == "GET" and self.static_dir:
-            # Путь либо с префиксом (/static/css/app.css), либо прямой
-            rel_path = None
-            if path.startswith(self.static_prefix):
+            # 1. Попытка с префиксом static_prefix (если он задан)
+            if self.static_prefix and path.startswith(self.static_prefix):
                 rel_path = path[len(self.static_prefix):].lstrip("/")
-            
+                if rel_path:
+                    safe_full_path = os.path.abspath(os.path.join(self.static_dir, rel_path))
+                    # Защита от Path Traversal
+                    if (safe_full_path == self.static_dir or safe_full_path.startswith(self.static_dir + os.sep)) and os.path.isfile(safe_full_path):
+                        self._serve_static_file(proto, safe_full_path)
+                        return
+
+            # 2. Прямая раздача из static_dir (например, /assets/..., /favicon.ico)
+            rel_path = path.lstrip("/")
             if rel_path:
                 safe_full_path = os.path.abspath(os.path.join(self.static_dir, rel_path))
                 # Защита от Path Traversal
-                if safe_full_path.startswith(self.static_dir) and os.path.isfile(safe_full_path):
+                if (safe_full_path == self.static_dir or safe_full_path.startswith(self.static_dir + os.sep)) and os.path.isfile(safe_full_path):
                     self._serve_static_file(proto, safe_full_path)
                     return
 
@@ -256,6 +288,8 @@ class RsgiWsrpcApp:
         """Отдает статический файл через нативный proto.response_file (Zero-Copy)."""
         content_type, _ = mimetypes.guess_type(file_path)
         content_type = content_type or "application/octet-stream"
+        if content_type.startswith("text/") or content_type in ("application/javascript", "application/json"):
+            content_type += "; charset=utf-8"
         
         headers = [
             ("content-type", content_type),
@@ -297,10 +331,13 @@ class RsgiWsrpcApp:
                 except Exception as e:
                     logger.error(f"[RsgiWsrpcApp on_connect] Ошибка в хуке подключения: {e}", exc_info=True)
             await session.start()
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, ConnectionResetError):
             pass
         except Exception as e:
-            logger.error(f"[RsgiWsrpcApp WS] Ошибка сокет-сессии: {e}", exc_info=True)
+            if "RSGI transport is closed" in str(e) or "ProtocolClosed" in type(e).__name__:
+                logger.debug(f"[RsgiWsrpcApp WS] Клиент отключился (сессия #{session.session_id})")
+            else:
+                logger.error(f"[RsgiWsrpcApp WS] Ошибка сокет-сессии: {e}", exc_info=True)
 
     def run(self, host: str = "127.0.0.1", port: int = 8080, workers: int = 1, **granian_kwargs: Any):
         """

@@ -15,11 +15,21 @@ from .models import (
     User,
     Role,
     RolePermission,
+    UserPermission,
+    RpcPermission,
+    UserRole,
+    RoleRpcPermission,
+    UserRpcPermission,
+    UserTeam,
     RefreshToken,
     ActiveSession,
     OAuthAccount,
     Team,
     SystemData,
+)
+from .discovery import (
+    sync_rpc_permissions,
+    reload_public_rpc_cache,
 )
 from .permissions import (
     check_permissions,
@@ -35,6 +45,7 @@ from .handlers import (
     cleanup_app_session,
     handle_ws_disconnect,
 )
+from . import permission_handlers
 
 __all__ = [
     # Контексты и базовые классы RLS
@@ -47,11 +58,20 @@ __all__ = [
     "User",
     "Role",
     "RolePermission",
+    "UserPermission",
+    "RpcPermission",
+    "UserRole",
+    "RoleRpcPermission",
+    "UserRpcPermission",
+    "UserTeam",
     "RefreshToken",
     "ActiveSession",
     "OAuthAccount",
     "Team",
     "SystemData",
+    # Service Discovery
+    "sync_rpc_permissions",
+    "reload_public_rpc_cache",
     # Проверки прав
     "check_permissions",
     "prefill_ownership",

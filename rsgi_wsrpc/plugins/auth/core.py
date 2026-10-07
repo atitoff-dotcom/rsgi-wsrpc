@@ -67,6 +67,7 @@ class AuthSession:
         user_roles: list,
         session_db_id: int,
         user_ctx: Any = None,
+        allowed_rpc_methods: Any = None,
         send_request_cb: Any = None,
         send_stream_cb: Any = None,
         close_cb: Any = None,
@@ -78,9 +79,23 @@ class AuthSession:
         self.user_roles = user_roles
         self.session_db_id = session_db_id
         self.user_ctx = user_ctx
+        self.allowed_rpc_methods = set(allowed_rpc_methods) if allowed_rpc_methods else set()
         self._send_request_cb = send_request_cb
         self._send_stream_cb = send_stream_cb
         self._close_cb = close_cb
+
+    def has_rpc_permission(self, method_name: str) -> bool:
+        """Проверяет право на вызов RPC-метода (O(1) in-memory)."""
+        if self.user_ctx and getattr(self.user_ctx, "is_superadmin", False):
+            return True
+        if "admin" in self.user_roles or self.user_role == "admin":
+            return True
+        if "*" in self.allowed_rpc_methods or method_name in self.allowed_rpc_methods:
+            return True
+        for m in self.allowed_rpc_methods:
+            if m.endswith(".*") and method_name.startswith(m[:-1]):
+                return True
+        return False
 
     async def send_request(self, method: str, params: dict = None, timeout: float = 5.0):
         if self._send_request_cb:

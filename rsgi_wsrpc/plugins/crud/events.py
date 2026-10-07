@@ -23,7 +23,7 @@ async def notify_crud_change(
     params: dict[str, Any] = {
         "model": model,
         "kind": kind,
-        "by_user": by_user
+        "by_user": str(by_user or "system")
     }
     if isinstance(record_id, list):
         params["ids"] = record_id

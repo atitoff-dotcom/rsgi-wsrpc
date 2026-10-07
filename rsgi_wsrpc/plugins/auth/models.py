@@ -10,28 +10,78 @@ import os
 import base64
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Integer, Boolean, Text, ForeignKey, Table, Column, DateTime, func, JSON, select
+from sqlalchemy import String, Integer, Boolean, Text, ForeignKey, Table, Column, DateTime, func, JSON, select, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
 from rsgi_wsrpc.plugins.db import Base
 from .core import RowSecureModel, BasicSecureModel, system_bypass_ctx
 
-# Many-to-Many association tables
-user_role_association = Table(
-    "auth_user_auth_role",
-    Base.metadata,
-    Column("user_id", Integer, ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True),
-    Column("role_id", Integer, ForeignKey("auth_role.id", ondelete="CASCADE"), primary_key=True),
-    extend_existing=True,
-)
 
-user_team_association = Table(
-    "auth_user_auth_team",
-    Base.metadata,
-    Column("user_id", Integer, ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True),
-    Column("team_id", Integer, ForeignKey("auth_team.id", ondelete="CASCADE"), primary_key=True),
-    extend_existing=True,
-)
+class UserRole(Base):
+    """Связующая модель сопоставления пользователя и роли (Many-to-Many)."""
+    __tablename__ = "auth_user_auth_role"
+    __table_args__ = {"extend_existing": True}
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True, info={"label": "Пользователь (ID)"})
+    role_id: Mapped[int] = mapped_column(ForeignKey("auth_role.id", ondelete="CASCADE"), primary_key=True, info={"label": "Роль (ID)"})
+
+    class Crud:
+        internal = True
+        verbose_name = "User Role"
+        verbose_name_plural = "User Roles"
+        search_fields = ["user_id", "role_id"]
+
+
+class UserTeam(Base):
+    """Связующая модель сопоставления пользователя и команды (Many-to-Many)."""
+    __tablename__ = "auth_user_auth_team"
+    __table_args__ = {"extend_existing": True}
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True, info={"label": "Пользователь (ID)"})
+    team_id: Mapped[int] = mapped_column(ForeignKey("auth_team.id", ondelete="CASCADE"), primary_key=True, info={"label": "Команда (ID)"})
+
+    class Crud:
+        internal = True
+        verbose_name = "User Team"
+        verbose_name_plural = "User Teams"
+        search_fields = ["user_id", "team_id"]
+
+
+class RoleRpcPermission(Base):
+    """Связующая модель сопоставления роли и RPC-права (Many-to-Many)."""
+    __tablename__ = "auth_role_auth_rpc_permission"
+    __table_args__ = {"extend_existing": True}
+
+    role_id: Mapped[int] = mapped_column(ForeignKey("auth_role.id", ondelete="CASCADE"), primary_key=True, info={"label": "Роль (ID)"})
+    rpc_permission_id: Mapped[int] = mapped_column(ForeignKey("auth_rpc_permission.id", ondelete="CASCADE"), primary_key=True, info={"label": "RPC Право (ID)"})
+
+    class Crud:
+        internal = True
+        verbose_name = "Role RPC Permission"
+        verbose_name_plural = "Role RPC Permissions"
+        search_fields = ["role_id", "rpc_permission_id"]
+
+
+class UserRpcPermission(Base):
+    """Связующая модель сопоставления пользователя и персонального RPC-права (Many-to-Many)."""
+    __tablename__ = "auth_user_auth_rpc_permission"
+    __table_args__ = {"extend_existing": True}
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("auth_user.id", ondelete="CASCADE"), primary_key=True, info={"label": "Пользователь (ID)"})
+    rpc_permission_id: Mapped[int] = mapped_column(ForeignKey("auth_rpc_permission.id", ondelete="CASCADE"), primary_key=True, info={"label": "RPC Право (ID)"})
+
+    class Crud:
+        internal = True
+        verbose_name = "User RPC Permission"
+        verbose_name_plural = "User RPC Permissions"
+        search_fields = ["user_id", "rpc_permission_id"]
+
+
+# Secondary tables for ORM relationship(..., secondary=...)
+user_role_association = UserRole.__table__
+user_team_association = UserTeam.__table__
+role_rpc_permission_association = RoleRpcPermission.__table__
+user_rpc_permission_association = UserRpcPermission.__table__
 
 
 class Team(RowSecureModel):
@@ -44,6 +94,36 @@ class Team(RowSecureModel):
     )
 
 
+class RpcPermission(RowSecureModel):
+    """
+    Модель для прав доступа к JSON-RPC методам.
+    Поддерживает точные имена (orders.dispatch) и маски с префиксами (orders.*).
+    """
+    __tablename__ = "auth_rpc_permission"
+
+    name: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    roles: Mapped[List["Role"]] = relationship(
+        "Role", secondary=role_rpc_permission_association, back_populates="rpc_permissions"
+    )
+    users: Mapped[List["User"]] = relationship(
+        "User", secondary=user_rpc_permission_association, back_populates="rpc_permissions"
+    )
+
+    class Crud:
+        internal = True
+        verbose_name = "RPC Permission"
+        verbose_name_plural = "RPC Permissions"
+        readonly = {"name"}
+        search_fields = ["name", "description"]
+
+    def __str__(self):
+        pub = " (public)" if self.is_public else ""
+        return f"RPC-метод {self.name}{pub} [{self.id}]"
+
+
 class Role(RowSecureModel):
     __tablename__ = "auth_role"
 
@@ -53,10 +133,19 @@ class Role(RowSecureModel):
     permissions: Mapped[List["RolePermission"]] = relationship(
         "RolePermission", back_populates="role", cascade="all, delete-orphan"
     )
+    rpc_permissions: Mapped[List["RpcPermission"]] = relationship(
+        "RpcPermission", secondary=role_rpc_permission_association, back_populates="roles"
+    )
     users: Mapped[List["User"]] = relationship(
         "User", secondary=user_role_association, back_populates="roles"
     )
     
+    class Crud:
+        verbose_name = "Роль"
+        verbose_name_plural = "Роли"
+        hidden = {"creator_id", "team_id"}
+        search_fields = ["name", "description"]
+
     def __str__(self):
         return f"Роль пользователя {self.name} [{self.id}]"
 
@@ -75,6 +164,34 @@ class RolePermission(RowSecureModel):
     can_delete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     
     row_level_only: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+
+    class Crud:
+        internal = True
+        verbose_name = "Role Permission"
+        verbose_name_plural = "Role Permissions"
+
+
+class UserPermission(RowSecureModel):
+    """Персональные CRUD-разрешения пользователя (надбавка к ролевым правам)."""
+    __tablename__ = "auth_user_permission"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("auth_user.id", ondelete="CASCADE"), index=True)
+    user: Mapped["User"] = relationship("User", back_populates="permissions")
+
+    model_name: Mapped[str] = mapped_column(String(100))
+    
+    can_create: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    can_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    can_update: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    can_delete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    
+    row_level_only: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+
+    class Crud:
+        internal = True
+        verbose_name = "User Permission"
+        verbose_name_plural = "User Permissions"
+        search_fields = ["model_name", "user_id"]
 
 
 class RefreshToken(Base):
@@ -148,10 +265,22 @@ class User(RowSecureModel):
     teams: Mapped[List["Team"]] = relationship(
         "Team", secondary=user_team_association, back_populates="users"
     )
+    permissions: Mapped[List["UserPermission"]] = relationship(
+        "UserPermission", back_populates="user", cascade="all, delete-orphan"
+    )
+    rpc_permissions: Mapped[List["RpcPermission"]] = relationship(
+        "RpcPermission", secondary=user_rpc_permission_association, back_populates="users"
+    )
     
     refresh_tokens: Mapped[List["RefreshToken"]] = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     active_sessions: Mapped[List["ActiveSession"]] = relationship("ActiveSession", back_populates="user", cascade="all, delete-orphan")
     oauth_accounts: Mapped[List["OAuthAccount"]] = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan")
+
+    class Crud:
+        verbose_name = "Пользователь"
+        verbose_name_plural = "Пользователи"
+        hidden = {"password_hash", "creator_id", "team_id"}
+        search_fields = ["name", "login", "email"]
 
     def __str__(self):
         return f"Пользователь {self.login or self.name} [{self.id}]"
@@ -164,50 +293,68 @@ class User(RowSecureModel):
             team_ids.insert(0, self.primary_team_id)
         return team_ids
 
+    @staticmethod
+    def _apply_perm_to_dict(merged_perms: dict, p) -> None:
+        m = p.model_name
+        if m not in merged_perms:
+            merged_perms[m] = {
+                "can_read": False, "read_global": False,
+                "can_update": False, "update_global": False,
+                "can_delete": False, "delete_global": False,
+                "can_create": False, "create_global": False,
+            }
+        if p.can_read:
+            merged_perms[m]["can_read"] = True
+            if not p.row_level_only:
+                merged_perms[m]["read_global"] = True
+        if p.can_update:
+            merged_perms[m]["can_update"] = True
+            if not p.row_level_only:
+                merged_perms[m]["update_global"] = True
+        if p.can_create:
+            merged_perms[m]["can_create"] = True
+            if not p.row_level_only:
+                merged_perms[m]["create_global"] = True
+        if p.can_delete:
+            merged_perms[m]["can_delete"] = True
+            if not p.row_level_only:
+                merged_perms[m]["delete_global"] = True
+
     def _get_permissions_dict(self) -> dict:
         merged_perms = {}
-        for role in self.roles:
-            for p in role.permissions:
-                m = p.model_name
-                if m not in merged_perms:
-                    merged_perms[m] = {
-                        "can_read": False, "read_global": False,
-                        "can_update": False, "update_global": False,
-                        "can_delete": False, "delete_global": False,
-                        "can_create": False, "create_global": False,
-                    }
-                
-                if p.can_read:
-                    merged_perms[m]["can_read"] = True
-                    if not p.row_level_only:
-                        merged_perms[m]["read_global"] = True
-                
-                if p.can_update:
-                    merged_perms[m]["can_update"] = True
-                    if not p.row_level_only:
-                        merged_perms[m]["update_global"] = True
-                
-                if p.can_create:
-                    merged_perms[m]["can_create"] = True
-                    if not p.row_level_only:
-                        merged_perms[m]["create_global"] = True
-
-                if p.can_delete:
-                    merged_perms[m]["can_delete"] = True
-                    if not p.row_level_only:
-                        merged_perms[m]["delete_global"] = True
-                        
+        # 1. Права из назначенных ролей
+        for role in getattr(self, "roles", []):
+            for p in getattr(role, "permissions", []):
+                self._apply_perm_to_dict(merged_perms, p)
+        # 2. Персональные права пользователя (накладываются поверх ролей)
+        for p in getattr(self, "permissions", []):
+            self._apply_perm_to_dict(merged_perms, p)
         return merged_perms
 
     @property
     def is_superadmin(self) -> bool:
         return any(role.id == 1 or role.name == "admin" for role in self.roles)
 
+    def get_allowed_rpc_methods(self) -> set[str]:
+        """Возвращает набор разрешенных RPC-методов для пользователя (ролевые + персональные)."""
+        if self.is_superadmin:
+            return {"*"}
+        methods: set[str] = set()
+        for role in getattr(self, "roles", []):
+            if hasattr(role, "rpc_permissions") and role.rpc_permissions:
+                for rpc_perm in role.rpc_permissions:
+                    methods.add(rpc_perm.name)
+        if hasattr(self, "rpc_permissions") and self.rpc_permissions:
+            for rpc_perm in self.rpc_permissions:
+                methods.add(rpc_perm.name)
+        return methods
+
     def get_permissions(self):
         return type("UserContext", (), {
             "user_id": self.id,
             "team_ids": self.get_team_ids(),
             "perms_dict": self._get_permissions_dict(),
+            "allowed_rpc_methods": self.get_allowed_rpc_methods(),
             "is_superadmin": self.is_superadmin
         })()
 
@@ -240,7 +387,10 @@ class User(RowSecureModel):
         try:
             stmt = select(cls).options(
                 selectinload(cls.roles).selectinload(Role.permissions),
-                selectinload(cls.teams)
+                selectinload(cls.roles).selectinload(Role.rpc_permissions),
+                selectinload(cls.teams),
+                selectinload(cls.permissions),
+                selectinload(cls.rpc_permissions)
             ).where(cls.id == user_id)
             result = await db_session.execute(stmt)
             user = result.scalar_one_or_none()
@@ -342,3 +492,19 @@ class OAuthAccount(Base):
 
     def __str__(self) -> str:
         return f"OAuthAccount({self.provider}:{self.provider_user_id} -> User #{self.user_id})"
+
+
+def _register_internal_auth_models() -> None:
+    """
+    Автоматическая регистрация служебных таблиц связей авторизации под капотом (is_internal=True).
+    Разработчику больше не нужно вручную регистрировать их в ModelRegistry.
+    """
+    try:
+        from rsgi_wsrpc.plugins.crud.registry import ModelRegistry
+        for m in (UserRole, RoleRpcPermission, UserPermission, UserRpcPermission, RpcPermission, RolePermission, UserTeam):
+            ModelRegistry.register(m)
+    except Exception:
+        pass
+
+
+_register_internal_auth_models()

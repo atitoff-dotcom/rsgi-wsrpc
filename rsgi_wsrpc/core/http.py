@@ -68,7 +68,51 @@ def extract_query_params(scope: Any) -> Dict[str, str]:
     return {k: v[0] if v else "" for k, v in parsed.items()}
 
 
+async def read_request_body(proto: Any) -> bytes:
+    """
+    Асинхронно считывает тело HTTP-запроса из RSGI proto.
+    Поддерживает потоковый асинхронный итератор Granian RSGI (__aiter__),
+    callable-протокол, метод .read() и fallback для тестов.
+    """
+    if hasattr(proto, "__aiter__"):
+        chunks = []
+        async for chunk in proto:
+            if chunk:
+                chunks.append(chunk if isinstance(chunk, bytes) else str(chunk).encode("utf-8"))
+        return b"".join(chunks)
+
+    if callable(proto):
+        b = await proto()
+        return b if isinstance(b, bytes) else str(b).encode("utf-8")
+
+    if hasattr(proto, "read"):
+        b = await proto.read()
+        return b if isinstance(b, bytes) else str(b).encode("utf-8")
+
+    if hasattr(proto, "receive_bytes"):
+        chunks = []
+        while True:
+            c = await proto.receive_bytes()
+            if not c:
+                break
+            chunks.append(c)
+        return b"".join(chunks)
+
+    if hasattr(proto, "receive"):
+        chunks = []
+        while True:
+            m = await proto.receive()
+            c = m if isinstance(m, bytes) else (m.get("body", b"") if isinstance(m, dict) else b"")
+            if not c:
+                break
+            chunks.append(c)
+        return b"".join(chunks)
+
+    return b""
+
+
 __all__ = [
     "extract_header",
     "extract_query_params",
+    "read_request_body",
 ]

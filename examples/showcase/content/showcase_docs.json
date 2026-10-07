@@ -1,0 +1,238 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "supported_languages": ["ru", "en"]
+  },
+  "sections": [
+    {
+      "id": "overview",
+      "number": 1,
+      "icon": "⚡",
+      "tag": "Granian RSGI • Zero-Overhead",
+      "title": {
+        "ru": "Архитектура Rust RSGI и протокол JSON-RPC 2.0",
+        "en": "Rust RSGI Architecture & JSON-RPC 2.0 Protocol"
+      },
+      "summary": {
+        "ru": "Высокопроизводительный нативный сервер Granian RSGI без накладных расходов WSGI/ASGI. Одно постоянное WebSocket-соединение для всех запросов.",
+        "en": "High-performance native Granian RSGI handling without WSGI/ASGI overhead. Single persistent WebSocket connection for all requests."
+      },
+      "callout": {
+        "ru": "В отличие от традиционного REST, требующего постоянных TCP-рукопожатий, TLS-согласований и парсинга заголовков HTTP на каждый чих, браузер держит одно постоянное соединение. Любой RPC-вызов обрабатывается за 0.2–1 мс.",
+        "en": "Unlike legacy REST requiring repeated TCP handshakes, TLS negotiations, and heavy HTTP headers on every request, the browser maintains a single persistent connection. RPC calls resolve in 0.2–1 ms latency."
+      },
+      "code": {
+        "python": "@app.rpc(\"system.ping\", public=True)\nasync def ping():\n    return {\"status\": \"pong\", \"server_time\": time.time()}",
+        "typescript": "import { rpc } from '@wsrpc/wsrpc';\n\nconst response = await rpc.call('system.ping');\nconsole.log(response); // { status: 'pong', server_time: ... }",
+        "wire": "--> {\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"system.ping\", \"params\": {}}\n<-- {\"jsonrpc\": \"2.0\", \"id\": 1, \"result\": {\"status\": \"pong\", \"server_time\": 1775546000.12}}"
+      }
+    },
+    {
+      "id": "tabular",
+      "number": 2,
+      "icon": "📊",
+      "tag": "RFC 0002 • 40–70% Compression",
+      "title": {
+        "ru": "Табличное сжатие данных списков (RFC 0002)",
+        "en": "Tabular Data Compression (RFC 0002)"
+      },
+      "summary": {
+        "ru": "Устраняет дублирование JSON-ключей в массивах однотипных объектов. Имена колонок передаются один раз, а строки — компактной 2D-матрицей.",
+        "en": "Eliminates repetitive JSON object keys in lists. Column names transfer once, while rows are delivered as a compact 2D matrix."
+      },
+      "callout": {
+        "ru": "Декоратор @tabular_response экономит от 40% до 70% сетевого трафика. Клиентский SDK прозрачно распаковывает матрицу в обычный массив объектов через unpackTabular().",
+        "en": "The @tabular_response decorator cuts network traffic by 40–70%. The client SDK unpacks tabular payloads transparently via unpackTabular()."
+      },
+      "code": {
+        "python": "@app.rpc(\"tasks.list\", public=True)\n@tabular_response(fields=[\"id\", \"title\", \"completed\", \"priority\"])\nasync def list_tasks():\n    # Возвращает стандартный список словарей или ORM моделей\n    return await fetch_tasks_from_db()",
+        "typescript": "const res = await rpc.call('tasks.list');\n// Клиент распаковывает матрицу в привычные объекты:\nconst items = unpackTabular(res.result);\n// [{ id: 1, title: 'Задача 1', completed: true, ... }]",
+        "wire": "--> {\"jsonrpc\": \"2.0\", \"id\": 2, \"method\": \"tasks.list\"}\n<-- {\"jsonrpc\": \"2.0\", \"id\": 2, \"result\": {\"$tabular\": true, \"fields\": [\"id\", \"title\", \"completed\"], \"rows\": [[1, \"Task 1\", true], [2, \"Task 2\", false]]}}"
+      }
+    },
+    {
+      "id": "cache",
+      "number": 3,
+      "icon": "🔄",
+      "tag": "RFC 0001 • Invalidation Bus",
+      "title": {
+        "ru": "Smart Cache и инвалидация тегов (RFC 0001)",
+        "en": "Smart Cache & Tag Invalidation (RFC 0001)"
+      },
+      "summary": {
+        "ru": "Монотонные версии тегов сущностей в памяти и БД. Сервер проактивно уведомляет клиентов о необходимости сброса кэша при мутациях.",
+        "en": "Monotonic entity tag versions in memory and DB. Server proactively invalidates client cache slices on data mutations."
+      },
+      "callout": {
+        "ru": "При вызове метода с декоратором @invalidates сервер инкрементирует версию затронутых тегов и рассылает сокетам событие cache.invalidate. Клиенты мгновенно обновляют устаревшие срезы данных.",
+        "en": "Methods decorated with @invalidates increment entity tag versions and broadcast cache.invalidate. Clients instantly drop stale slices and fetch fresh data."
+      },
+      "code": {
+        "python": "@app.rpc(\"tasks.complete\")\n@invalidates(tags=[\"tasks.list\", \"task.{task_id}\"])\nasync def complete_task(task_id: int):\n    await mark_completed(task_id)\n    return {\"status\": \"ok\", \"task_id\": task_id}",
+        "typescript": "rpc.on('cache.invalidate', (data) => {\n  console.log('Инвалидированы теги:', data.tags);\n  // Очистка локального стора и рефетч\n});",
+        "wire": "<-- {\"jsonrpc\": \"2.0\", \"method\": \"cache.invalidate\", \"params\": {\"tags\": [\"tasks.list\", \"task.42\"], \"version\": 105}}"
+      }
+    },
+    {
+      "id": "crud",
+      "number": 4,
+      "icon": "🗄️",
+      "tag": "Svelte 5 • Capability Access",
+      "title": {
+        "ru": "Универсальный реактивный CRUD и Админ-панель",
+        "en": "Universal Reactive CRUD & Admin Panel"
+      },
+      "summary": {
+        "ru": "Автоматическая генерация API и встроенная панель управления на Svelte 5. Поддержка связей Many-to-Many, ForeignKey и фильтрации.",
+        "en": "Automated CRUD API generation and embedded Svelte 5 admin panel. Supports Many-to-Many, ForeignKeys, and deep filtering."
+      },
+      "callout": {
+        "ru": "Достаточно зарегистрировать модель SQLAlchemy через ModelRegistry.register(MyModel), и методы crud.schema, crud.list ($tabular), crud.get, crud.create, crud.update_cell и crud.delete становятся доступны мгновенно.",
+        "en": "Simply register your SQLAlchemy model via ModelRegistry.register(MyModel), and crud.schema, crud.list ($tabular), crud.get, crud.create, crud.update_cell, and crud.delete work out of the box."
+      },
+      "code": {
+        "python": "from rsgi_wsrpc.plugins.crud import ModelRegistry\n\nclass Task(Base):\n    __tablename__ = \"tasks\"\n    id: Mapped[int] = mapped_column(primary_key=True)\n    title: Mapped[str] = mapped_column(String(200))\n\nModelRegistry.register(Task)",
+        "typescript": "const schema = await rpc.call('crud.schema', { model: 'Task' });\nconst list = await rpc.call('crud.list', { model: 'Task', page: 1, page_size: 50 });",
+        "wire": "--> {\"jsonrpc\": \"2.0\", \"id\": 4, \"method\": \"crud.update_cell\", \"params\": {\"model\": \"Task\", \"id\": 1, \"field\": \"completed\", \"value\": true}}\n<-- {\"jsonrpc\": \"2.0\", \"id\": 4, \"result\": {\"success\": true, \"id\": 1}}"
+      }
+    },
+    {
+      "id": "stream",
+      "number": 5,
+      "icon": "🌊",
+      "tag": "Multi-Return • Non-Blocking",
+      "title": {
+        "ru": "Multi-return Потоковый Стриминг (stream: true)",
+        "en": "Multi-return Streaming (stream: true)"
+      },
+      "summary": {
+        "ru": "Отправка промежуточных результатов и прогресса длительных операций без блокировки сокета и без дробления на polling-запросы.",
+        "en": "Stream intermediate progress chunks for long-running operations without blocking the socket or polling."
+      },
+      "callout": {
+        "ru": "Метод session.send_stream_chunk(rpc_id, chunk) отправляет клиенту промежуточные события, помечаемые флагом stream: true. Финальный return завершает общий RPC-запрос.",
+        "en": "session.send_stream_chunk(rpc_id, chunk) sends intermediate payloads marked with stream: true. The final return resolves the original RPC promise."
+      },
+      "code": {
+        "python": "@app.rpc(\"analytics.generate\")\nasync def generate_analytics(session):\n    rpc_id = current_rpc_id_ctx.get()\n    for i in range(1, 4):\n        await asyncio.sleep(0.5)\n        await session.send_stream_chunk(rpc_id, {\"step\": i, \"progress\": i * 25})\n    return {\"progress\": 100, \"report_url\": \"/reports/summary.pdf\"}",
+        "typescript": "await rpc.call('analytics.generate', {}, {\n  onChunk: (chunk) => console.log('Прогресс:', chunk.progress)\n});",
+        "wire": "<-- {\"jsonrpc\": \"2.0\", \"id\": 5, \"stream\": true, \"result\": {\"step\": 1, \"progress\": 25}}\n<-- {\"jsonrpc\": \"2.0\", \"id\": 5, \"result\": {\"progress\": 100, \"report_url\": \"/reports/summary.pdf\"}}"
+      }
+    },
+    {
+      "id": "reverse-rpc",
+      "number": 6,
+      "icon": "🪞",
+      "tag": "Full Duplex • Browser RPC",
+      "title": {
+        "ru": "Симметричный Reverse RPC (Сервер → Браузер)",
+        "en": "Symmetric Reverse RPC (Server → Browser)"
+      },
+      "summary": {
+        "ru": "WSRPC полностью симметричен: бэкенд может сам отправить JSON-RPC запрос в браузер и асинхронно дождаться ответа.",
+        "en": "WSRPC is fully symmetric: the backend can initiate JSON-RPC calls into the browser and await response."
+      },
+      "callout": {
+        "ru": "Сервер вызывает метод браузера через session.send_request('client.inspect', timeout=3.0). Браузер выполняет вычисление и возвращает ответ серверу.",
+        "en": "The server calls a browser method via session.send_request('client.inspect', timeout=3.0). The browser executes logic and replies with a standard JSON-RPC response."
+      },
+      "code": {
+        "python": "@app.rpc(\"admin.inspect_client\")\nasync def inspect_client(session):\n    browser_env = await session.send_request(\"client.get_env\", timeout=5.0)\n    return {\"inspected\": browser_env}",
+        "typescript": "rpc.register('client.get_env', () => {\n  return { userAgent: navigator.userAgent, screen: `${screen.width}x${screen.height}` };\n});",
+        "wire": "<-- {\"jsonrpc\": \"2.0\", \"id\": \"srv-1\", \"method\": \"client.get_env\", \"params\": {}}\n--> {\"jsonrpc\": \"2.0\", \"id\": \"srv-1\", \"result\": {\"userAgent\": \"Mozilla...\"}}"
+      }
+    },
+    {
+      "id": "broadcast",
+      "number": 7,
+      "icon": "📢",
+      "tag": "O(1) Broadcast • Zero-Copy",
+      "title": {
+        "ru": "Realtime Broadcast (Рассылки в реальном времени)",
+        "en": "Realtime Broadcast (Zero-Copy Push)"
+      },
+      "summary": {
+        "ru": "Мгновенная O(1) рассылка уведомлений всем подключенным сокетам. Сериализация в JSON выполняется ровно 1 раз в памяти.",
+        "en": "Instant O(1) notification fan-out to all connected sockets. Payload serializes into JSON exactly once in memory."
+      },
+      "callout": {
+        "ru": "Функция broadcast_notification() сериализует сообщение один раз через orjson, после чего Rust-движок Granian рассылает байты всем сокетам без лишней нагрузки на Python-интерпретатор.",
+        "en": "broadcast_notification() serializes the message once via orjson, after which the native Rust engine broadcasts raw frame bytes across all active sockets."
+      },
+      "code": {
+        "python": "from rsgi_wsrpc.plugins.broadcast import broadcast_notification\n\n@app.rpc(\"alerts.publish\")\nasync def publish_alert(message: str):\n    await broadcast_notification(\"system.alert\", {\"message\": message, \"time\": time.time()})\n    return {\"status\": \"broadcast_sent\"}",
+        "typescript": "rpc.on('system.alert', (data) => {\n  console.warn('Получено системное оповещение:', data.message);\n});",
+        "wire": "<-- {\"jsonrpc\": \"2.0\", \"method\": \"system.alert\", \"params\": {\"message\": \"Server maintenance in 5 min\", \"time\": 1775546200}}"
+      }
+    },
+    {
+      "id": "files",
+      "number": 8,
+      "icon": "📁",
+      "tag": "Granian RSGI • Streaming 2PC",
+      "title": {
+        "ru": "Загрузка файлов: Двухфазный коммит (2PC)",
+        "en": "File Upload: Two-Phase Commit (2PC)"
+      },
+      "summary": {
+        "ru": "Потоковая загрузка больших файлов без буферизации в оперативной памяти и атомарная фиксация через WSRPC.",
+        "en": "Streaming file upload without RAM buffering and atomic commit via WSRPC."
+      },
+      "callout": {
+        "ru": "1-я фаза: Чанки пишутся напрямую на диск в транзакционную папку POST /upload с O(1) памяти. 2-я фаза: WSRPC-метод files.commit атомарно переносит файлы в постоянное хранилище.",
+        "en": "Phase 1: Chunks stream straight to disk into a temporary folder via POST /upload with O(1) RAM. Phase 2: files.commit atomically commits files to persistent storage."
+      },
+      "code": {
+        "python": "# Фаза 1: HTTP-стриминг чанков на диск\n# POST /upload?folder_hash=abc123\n\n# Фаза 2: WSRPC атомарный коммит\n@app.rpc(\"files.commit\")\nasync def commit_files(folder_hash: str):\n    saved_files = await finalize_folder_upload(folder_hash)\n    return {\"status\": \"committed\", \"files\": saved_files}",
+        "typescript": "// 1. Загрузка через FormData стримом\nawait fetch(`/upload?folder_hash=${hash}`, { method: 'POST', body: formData });\n// 2. Атомарная фиксация через WebSocket\nconst res = await rpc.call('files.commit', { folder_hash: hash });",
+        "wire": "--> POST /upload?folder_hash=abc123 (Binary Stream)\n<-- HTTP/1.1 200 OK {\"uploaded\": 3}\n--> {\"jsonrpc\": \"2.0\", \"id\": 8, \"method\": \"files.commit\", \"params\": {\"folder_hash\": \"abc123\"}}"
+      }
+    },
+    {
+      "id": "rbac",
+      "number": 9,
+      "icon": "🔐",
+      "tag": "RLS Engine • SQLAlchemy 2.0",
+      "title": {
+        "ru": "Роли, права и безопасность (RLS)",
+        "en": "RBAC & Row-Level Security (RLS)"
+      },
+      "summary": {
+        "ru": "Гибридный контроль доступа: динамические роли в БД, разделение прав на CRUD и RPC, Row-Level Security по командам и владельцам.",
+        "en": "Hybrid access control: dynamic DB roles, separate CRUD & RPC permissions, and Row-Level Security by teams and owners."
+      },
+      "callout": {
+        "ru": "По умолчанию гостям открыт только login.* (Default Deny). Модели RowSecureModel содержат team_id и creator_id, гарантируя, что пользователи видят только данные своей команды.",
+        "en": "By default, unauthenticated guests only access login.* (Default Deny). RowSecureModel enforces team_id and creator_id scoping so users only see their team records."
+      },
+      "code": {
+        "python": "class Task(RowSecureModel):\n    __tablename__ = \"tasks\"\n    title: Mapped[str] = mapped_column(String(100))\n    # id, creator_id, team_id, created_at встроены в RowSecureModel!\n\n# В handlers.py:\n@rpc_method(\"tasks.create\")\nasync def create_task(session, title: str):\n    check_permissions(\"create\", \"Task\")\n    # Права проверяются на уровне ORM",
+        "typescript": "const me = await rpc.call('auth.me');\nconsole.log(me.role, me.permissions);",
+        "wire": "--> {\"jsonrpc\": \"2.0\", \"id\": 9, \"method\": \"tasks.list\", \"params\": {\"only_mine\": true}}\n<-- {\"jsonrpc\": \"2.0\", \"id\": 9, \"result\": {\"$tabular\": true, \"rows\": [...]}}"
+      }
+    },
+    {
+      "id": "seo",
+      "number": 10,
+      "icon": "🤖",
+      "tag": "Bot Detector • SSR Crawler",
+      "title": {
+        "ru": "SEO и рендеринг для поисковых ботов",
+        "en": "SEO & Dynamic Rendering for Bots"
+      },
+      "summary": {
+        "ru": "Автоматическое распознавание краулеров поисковых систем и отдача статического SSR HTML с мета-тегами OpenGraph и JSON-LD.",
+        "en": "Automatic crawler detection and server-side HTML rendering with OpenGraph and JSON-LD meta tags."
+      },
+      "callout": {
+        "ru": "Поисковые краулеры (Googlebot, Яндекс, Telegram, Discord) мгновенно получают чистый HTML с разметкой, а живые пользователи получают реактивный SPA без перезагрузок страниц.",
+        "en": "Search crawlers (Googlebot, Yandex, Telegram, Discord) receive clean SSR HTML, while real users get the lightning-fast reactive SPA."
+      },
+      "code": {
+        "python": "from rsgi_wsrpc.plugins.seo import bot_page, render_seo_page\n\n@bot_page(\"/tasks/{task_id}\")\nasync def task_seo(task_id: int):\n    task = await get_task_by_id(task_id)\n    return render_seo_page(\n        title=task.title,\n        description=\"Просмотр задачи на rsgi-wsrpc\",\n        og_image=\"/static/og.png\"\n    )",
+        "typescript": "// Браузер работает как обычный SPA:\nwindow.history.pushState({}, '', '/tasks/42');",
+        "wire": "GET /tasks/42 User-Agent: Googlebot/2.1\nHTTP/1.1 200 OK Content-Type: text/html\n<html><head><title>Task 42</title><meta property=\"og:title\" content=\"Task 42\"></head>..."
+      }
+    }
+  ]
+}

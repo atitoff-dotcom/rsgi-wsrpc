@@ -40,11 +40,12 @@ async def get_records():
   - Каждое успешное обновление токена (`login.refresh`) автоматически сдвигает срок действия токена вперед на `session_lifetime_days`.
   - Автоматическая очистка просроченных токенов при авторизации.
   - Контроль лимита одновременных устройств пользователя (`max_active_sessions`, по умолчанию 10).
-- **Динамические роли и права в БД (`auth_role`, `auth_role_permission`)**:
+- **Динамические роли и права в БД (`auth_role`, `auth_role_permission`, `auth_rpc_permission`)**:
   - Роли не захардкожены: таблица `auth_role` позволяет создавать любые роли предметной области (`moderator`, `operator`, `manager`, `inspector`).
-  - Связь Many-to-Many: у одного пользователя может быть несколько активных ролей.
-  - Матрица прав: таблица `auth_role_permission` задает атомарные флаги доступа к моделям (`can_create`, `can_read`, `can_update`, `can_delete`, `create_global`, `read_global`).
-  - При авторизации роли пользователя автоматически привязываются к сокет-сессии, обеспечивая проверку на уровне `@rpc_method(role=...)`.
+  - Системные роли: две встроенные роли `admin` и `user` защищены от удаления и изменения.
+  - Матрица прав к моделям: таблица `auth_role_permission` задает флаги доступа к моделям CRUD (`can_create`, `can_read`, `can_update`, `can_delete`, `create_global`, `read_global`).
+  - Права доступа к RPC-методам: таблица `auth_rpc_permission` задает флаг `is_public` (для гостей) и привязку методов к ролям с поддержкой масок (`orders.*`).
+  - Авто-синк и кэш: Service Discovery сканирует методы при старте и загружает публичные методы в O(1) in-memory кэш (`PUBLIC_RPC_METHODS`).
 - **Безопасность на уровне строк (Row-Level Security / RLS)**:
   - Миксины `BasicSecureModel` и `RowSecureModel`.
   - Слушатели событий сессии SQLAlchemy автоматически фильтруют выборки согласно контексту `current_user_ctx`.

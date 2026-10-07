@@ -48,8 +48,16 @@ def orjson_dumps(val: Any) -> str:
     return orjson.dumps(val).decode("utf-8")
 
 
+_db_echo = os.environ.get("DB_ECHO", "").lower() in ("true", "1", "yes")
+if not _db_echo:
+    try:
+        from rsgi_wsrpc.core.lib.config import settings as core_settings
+        _db_echo = bool(getattr(core_settings, "db_echo", False))
+    except Exception:
+        pass
+
 engine_kwargs: Dict[str, Any] = {
-    "echo": False,
+    "echo": _db_echo,
     "json_serializer": orjson_dumps,
     "json_deserializer": orjson.loads,
 }

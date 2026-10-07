@@ -14,19 +14,7 @@ WS_CLOSE_CODES = {
     1011: "Internal Error (Критическая ошибка на стороне сервера)",
 }
 
-class UserRole(str):
-    """
-    Класс для ролей пользователей.
-    Наследуется от str для поддержки динамических ролей из базы данных.
-    """
-    ADMIN = "admin"
-    AGENT = "agent"
-    ANALYST = "analyst"
-    SUPERVISOR = "supervisor"
-    BANK_WORKER = "bank_worker"
-    PRINCIPAL = "principal"
-    GUEST = "guest"
-
-
-
-
+# Системные роли безопасности
+ADMIN_ROLE = "admin"
+DEFAULT_USER_ROLE = "user"
+SYSTEM_ROLES = frozenset({ADMIN_ROLE, DEFAULT_USER_ROLE})

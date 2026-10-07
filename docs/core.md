@@ -74,10 +74,10 @@ The `core/session.py` module is the foundation of the framework. It upgrades raw
 Each RPC method is registered using the `@rpc_method` decorator (or `@app.rpc` when using `RsgiWsrpcApp`):
 
 ```python
-from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError, UserRole
+from rsgi_wsrpc import rpc_method, JsonRpcSession, RPCError
 
 # 1. Automatic kwargs unpacking
-@rpc_method("calculator.add", public=True)
+@rpc_method("calculator.add")
 async def calculate_sum(a: int = 0, b: int = 0):
     return {"sum": a + b}
 
@@ -91,11 +91,11 @@ async def create_task(session: JsonRpcSession, title: str, priority: int = 1):
 async def echo_raw(session: JsonRpcSession, params: dict):
     return params
 
-# 4. Role-restricted method
-@rpc_method("admin.restart_service", role=UserRole.ADMIN)
+# 4. Protected administrative method (permissions managed in DB via CRUD)
+@rpc_method("admin.restart_service")
 async def restart_service(session: JsonRpcSession):
-    # If the session lacks admin privileges, the core automatically
-    # returns a standard JSON-RPC error: "Access denied: requires role admin"
+    # If the user lacks admin privileges, the core automatically
+    # returns an error to the client: "Access denied to method 'admin.restart_service'"
     return {"status": "restarting"}
 ```
 
@@ -108,30 +108,47 @@ async def ping():
     return {"status": "pong"}
 ```
 
-### Custom Roles & Extending the Role Model
+### Role Model & Access Control (Single Source of Truth — Database)
 
-The framework core imposes no rigid or closed set of roles. The `UserRole` class is explicitly subclassed from Python's standard `str`, enabling applications to define arbitrary domain roles:
+The framework follows a strict architectural standard: **no hardcoded roles or access restrictions in application code**. All roles, RPC method permissions, and model policies are configured and stored **exclusively in the database** via the CRUD administration panel.
+
+RPC handlers are declared cleanly without role strings in decorators:
 
 ```python
-# 1. Declare custom application roles (app/roles.py)
-from core.constants import UserRole
-
-class AppRole(UserRole):
-    MODERATOR = "moderator"
-    OPERATOR  = "operator"
-    MANAGER   = "manager"
-
-@rpc_method("content.moderate", role=AppRole.MODERATOR)
-async def moderate_content(session: JsonRpcSession, params: dict):
-    return {"status": "approved"}
-
-# 2. Use plain string literals directly
-@rpc_method("orders.dispatch", role="operator")
-async def dispatch_order(session: JsonRpcSession, params: dict):
-    return {"status": "dispatched"}
+@app.rpc("orders.dispatch")
+async def dispatch_order(order_id: int):
+    # Business logic for dispatching an order
+    return {"status": "dispatched", "order_id": order_id}
 ```
 
-> **Superadmin Bypass Rule**: A user holding the `admin` role is treated as the core superuser and is granted unconditional access to all role-restricted RPC methods, regardless of the specific role specified in `role=` (e.g. an admin can invoke methods restricted to `moderator` or `operator`).
+#### Core Security Principles:
+
+1. **Unauthenticated Visitor (Guest)**:
+   * Has no user account and no role (`None`).
+   * Can only invoke methods marked as public (`is_public = True` in `auth_rpc_permission`) or authentication endpoints (`login.*`).
+   * Public check executes in `O(1)` memory lookup via kernel in-memory cache (`PUBLIC_RPC_METHODS`).
+
+2. **Registered User**:
+   * Upon registration (`login.register` or OAuth), the user is automatically granted the default system role **`user`**.
+   * Administrators can subsequently reassign or extend roles (`manager`, `editor`, `operator`, `buyer`, etc.) via the CRUD panel.
+
+3. **RPC Method Permissions (`auth_rpc_permission`)**:
+   * On server startup, Service Discovery inspects all `@app.rpc` methods and syncs them with the `auth_rpc_permission` table.
+   * Administrators assign methods to roles via CRUD:
+     * Exact method name: `"orders.dispatch"`, `"reports.monthly"`.
+     * Wildcard prefix: `"orders.*"`, `"catalog.*"`.
+   * On user login, allowed methods are cached in the socket session (`session.data.allowed_rpc_methods`), providing `O(1)` in-memory authorization without database roundtrips.
+
+4. **Built-in Immutable Roles**:
+   * Exactly two system roles are permanently built into the kernel: **`admin`** and **`user`**.
+   * They cannot be deleted (`crud.delete`) or renamed (`crud.update_cell`) via CRUD.
+   * The **`admin`** role holds **Superadmin Bypass** privileges (unconditional access to all RPC methods) and exclusive control over the `/crud` administration interface.
+
+5. **First-Time Setup (CLI Bootstrap)**:
+   * To provision the initial system administrator:
+   ```bash
+   python -m rsgi_wsrpc createsuperuser --username admin --password secret
+   ```
 
 ### Context Variables (`ContextVars`)
 
@@ -666,23 +683,52 @@ rpc.authInterceptor = async () => {
 
 ## 9. Unified Application Class: RsgiWsrpcApp
 
-Starting in version `0.3.3`, application configuration and bootstrapping are unified under `RsgiWsrpcApp`:
+Starting in version `0.4.3`, application configuration and bootstrapping are unified under `RsgiWsrpcApp`. All core and plugin settings are passed through a **single entrypoint**:
 
 ```python
-from rsgi_wsrpc import RsgiWsrpcApp, rpc_method, tabular_response, RPCError, UserRole
+import os
+from rsgi_wsrpc import RsgiWsrpcApp, VkOAuth, YandexOAuth, tabular_response, RPCError
 
 app = RsgiWsrpcApp(
-    secret_key="production-secret-key",
-    database_url="sqlite+aiosqlite:///app.db",
-    static_dir="./public",       # Zero-Copy static files via Rust RSGI
-    index_file="index.html",     # Automatically served on GET /
-    login_rpc="login.",          # Method prefix allowed for guests
-    cors=True,                   # Automatic CORS preflight OPTIONS
-    backplane=None               # Backplane instance for multi-worker setups
+    # --- Network & HTTP ---
+    static_dir="./public",             # Zero-Copy static files via Rust RSGI
+    index_file="index.html",           # Automatically served on GET /
+    cors=True,                         # Automatic CORS preflight OPTIONS
+    cors_origins="*",                  # Allowed CORS origins
+    max_message_size=10 * 1024 * 1024, # Maximum WebSocket message size (10 MB)
+
+    # --- Database (plugins.db) ---
+    database_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///app.db"),
+    db_echo=False,                     # Console SQL logging
+
+    # --- Security & Sessions (plugins.auth) ---
+    secret_key=os.getenv("SECRET_KEY", "dev-secret-key-change-in-production"),
+    login_rpc="login.",                # Prefix for methods accessible by guests
+    token_expire_hours=24 * 30,        # Session lifetime (30 days)
+    auth_timeout=0,                    # Seconds before kicking unauthenticated sockets (0 = disabled)
+    guest_idle_timeout=900,            # Disconnect inactive guests after 15 min
+    user_idle_timeout=3600,            # Disconnect inactive users after 1 hour
+
+    # --- External Auth (OAuth) ---
+    oauth=[
+        VkOAuth(client_id="12345", client_secret="vk_secret"),
+        YandexOAuth(client_id="67890", client_secret="ya_secret"),
+    ],
+
+    # --- File Storage (plugins.files) ---
+    files_path="./uploads",            # Storage directory (2PC Commit)
+    max_upload_size=50 * 1024 * 1024,  # Maximum file upload size (50 MB)
+
+    # --- Scaling (backplane) ---
+    backplane_url=None,                # "redis://127.0.0.1:6379/0" for workers > 1
+
+    # --- SEO & SSR (plugins.seo) ---
+    enable_seo=False,                  # Bot interceptor for SSR HTML
+    sitemap_host="https://my-app.com", # Base domain for /sitemap.xml
 )
 
 # Register RPC handlers using application decorator
-@app.rpc("tasks.get_all", public=False)
+@app.rpc("tasks.get_all")
 @tabular_response(fields=["id", "title"])
 async def get_tasks():
     return [{"id": 1, "title": "Task 1"}]
@@ -691,6 +737,31 @@ async def get_tasks():
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080, workers=1)
 ```
+
+### `RsgiWsrpcApp` Parameter Reference:
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `static_dir` | `str \| None` | `None` | Path to frontend assets directory. Served via Rust Zero-Copy (`proto.response_file`). |
+| `index_file` | `str \| None` | `"index.html"` | Name of entry file served on root `GET /`. |
+| `cors` | `bool` | `True` | Enable CORS headers and handle `OPTIONS` preflight. |
+| `cors_origins` | `str \| list[str]`| `"*"` | Allowed origins for CORS. |
+| `max_message_size` | `int` | `10 * 1024 * 1024` | Maximum incoming WebSocket message size (10 MB). |
+| `database_url` | `str` | `"sqlite+aiosqlite:///app.db"` | SQLAlchemy connection URL (Postgres, SQLite, MySQL). |
+| `db_echo` | `bool` | `False` | Log all SQL statements to terminal. |
+| `secret_key` | `str` | `"dev-secret-key..."` | Secret key used for cryptographic HMAC token signing. |
+| `login_rpc` | `str` | `"login."` | Method prefix allowed for unauthenticated guests. |
+| `token_expire_hours`| `int` | `720` (30 days) | Session token expiration lifetime. |
+| `password_iterations`| `int` | `600_000` | PBKDF2-SHA256 password hash iterations (OWASP standard). |
+| `auth_timeout` | `int` | `0` | Seconds to authenticate after socket connect (`0` = never kick). |
+| `guest_idle_timeout`| `int` | `900` (15 min) | Idle disconnect timeout for guest sockets. |
+| `user_idle_timeout` | `int` | `3600` (1 hour) | Idle disconnect timeout for authenticated sockets. |
+| `oauth` | `list` | `[]` | List of typed providers (`VkOAuth`, `YandexOAuth`). |
+| `files_path` | `str` | `"./uploads"` | Storage folder for 2PC committed file uploads. |
+| `max_upload_size` | `int` | `50 * 1024 * 1024` | Maximum allowed file upload size (50 MB). |
+| `backplane_url` | `str \| None` | `None` | Shared message broker (`redis://...`) when `workers > 1`. |
+| `enable_seo` | `bool` | `False` | Detect search crawler bots and serve SSR HTML. |
+| `sitemap_host` | `str \| None` | `None` | Host domain for generating `/sitemap.xml`. |
 
 ### Features of `RsgiWsrpcApp`:
 1. **Rust Zero-Copy Static Serving**: For files in `static_dir`, Granian RSGI's native `proto.response_file` is invoked, bypassing Python byte buffering completely.

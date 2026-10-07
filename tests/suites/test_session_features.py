@@ -2,7 +2,6 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from rsgi_wsrpc.core.session import JsonRpcSession, rpc_method, RPC_REGISTRY, RPCError
-from rsgi_wsrpc.core.constants import UserRole
 
 class MockWs:
     def __init__(self, incoming_messages=None):
@@ -65,26 +64,26 @@ async def test_session_send_request_cleanup_on_timeout():
 
 @pytest.mark.asyncio
 async def test_session_multi_roles_access():
-    @rpc_method("editor.only", role=UserRole.ADMIN)
+    @rpc_method("editor.only", role="admin")
     async def editor_action(session, params):
         return {"status": "ok"}
 
-    # Case 1: Session has UserRole.ADMIN in user_roles
+    # Case 1: Session has "admin" in user_roles
     class MockAuthSession:
-        user_role = UserRole.GUEST
-        user_roles = [UserRole.GUEST, UserRole.ADMIN]
+        user_role = "user"
+        user_roles = ["user", "admin"]
 
     handler = RPC_REGISTRY["editor.only"]
     res = await handler(MockAuthSession(), {})
     assert res == {"status": "ok"}
 
-    # Case 2: Session has only GUEST
-    class MockGuestSession:
-        user_role = UserRole.GUEST
-        user_roles = [UserRole.GUEST]
+    # Case 2: Session has only "user"
+    class MockUserSession:
+        user_role = "user"
+        user_roles = ["user"]
 
     with pytest.raises(RPCError) as exc:
-        await handler(MockGuestSession(), {})
+        await handler(MockUserSession(), {})
     assert exc.value.code == -32003
 
 

@@ -8,7 +8,8 @@ JSON-RPC 2.0 обработчики для CRUD-плагина rsgi-wsrpc (crud.
 from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
-from sqlalchemy import select, update, delete, func, String, or_
+from sqlalchemy import select, update, delete, func, String, or_, and_, inspect
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rsgi_wsrpc.core.session import rpc_method, RPCError, JsonRpcSession
@@ -65,6 +66,10 @@ def _get_model_meta(model_name: str) -> ModelMeta:
         ModelRegistry.auto_discover(Base)
         meta = ModelRegistry.get(model_name)
     if not meta:
+        for m in ModelRegistry.all().values():
+            if m.table_name == model_name:
+                return m
+    if not meta:
         raise RPCError(-32602, f"Модель '{model_name}' не найдена или не опубликована в CRUD")
     return meta
 
@@ -79,18 +84,18 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
     uid = provider.user_id(session)
     is_super = provider.is_superuser(uid)
 
-    from rsgi_wsrpc.core.constants import UserRole
+    from rsgi_wsrpc.core.constants import ADMIN_ROLE
     from rsgi_wsrpc.core.lib.config import settings
 
     role = getattr(session, "user_role", None) or getattr(getattr(session, "data", None), "user_role", None)
     if hasattr(role, "value"):
         role = role.value
-    if role in ("admin", "ADMIN", UserRole.ADMIN):
+    if role in ("admin", "ADMIN", ADMIN_ROLE):
         is_super = True
     roles = getattr(session, "user_roles", [])
     for r in roles:
         val = r.value if hasattr(r, "value") else r
-        if val in ("admin", "ADMIN", UserRole.ADMIN):
+        if val in ("admin", "ADMIN", ADMIN_ROLE):
             is_super = True
             break
 
@@ -99,7 +104,7 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
         if token:
             from .auth import get_crud_session
             sdata = get_crud_session(token)
-            if sdata and sdata.get("role") in ("admin", "ADMIN", UserRole.ADMIN):
+            if sdata and sdata.get("role") in ("admin", "ADMIN", ADMIN_ROLE):
                 is_super = True
 
     target_model = params.get("model")
@@ -130,11 +135,17 @@ async def handle_crud_schema(session: JsonRpcSession, params: Dict[str, Any]) ->
 
     models_list = []
     for meta in ModelRegistry.all().values():
+        if meta.is_internal:
+            continue
         perms = make_perms(meta)
         if perms["can_read"]:
             models_list.append(meta.to_schema_dict(perms))
 
-    return {"models": models_list}
+    allow_guests = bool(settings.security.get("allow_guests", True))
+    return {
+        "models": models_list,
+        "allow_guests": allow_guests
+    }
 
 
 async def handle_crud_get(session: JsonRpcSession, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -156,7 +167,20 @@ async def handle_crud_get(session: JsonRpcSession, params: Dict[str, Any]) -> Di
             ctx = await create_access_context(provider, session, model_name, db)
             scope = await policy.scope(ctx, meta, "read", db)
 
-            stmt = select(cls).where(cls.id == record_id)
+            mapper = inspect(cls)
+            pk_cols = list(mapper.primary_key)
+            if hasattr(cls, "id"):
+                pk_cond = (cls.id == record_id)
+            elif len(pk_cols) == 1:
+                pk_cond = (pk_cols[0] == record_id)
+            else:
+                parts = str(record_id).split("_") if "_" in str(record_id) else [record_id]
+                conds = [pk_cols[i] == int(parts[i]) for i in range(min(len(pk_cols), len(parts)))]
+                pk_cond = and_(*conds)
+
+            stmt = select(cls).where(pk_cond)
+            for m in meta.get_m2m_fields():
+                stmt = stmt.options(selectinload(getattr(cls, m.name)))
             if scope is not None:
                 stmt = stmt.where(scope)
 
@@ -168,10 +192,17 @@ async def handle_crud_get(session: JsonRpcSession, params: Dict[str, Any]) -> Di
 
             result = {}
             for f in meta.get_public_fields():
-                val = getattr(obj, f.name, None)
-                if hasattr(val, "isoformat"):
-                    val = val.isoformat()
-                result[f.name] = val
+                if f.type == "m2m":
+                    rel_items = getattr(obj, f.name, []) or []
+                    result[f.name] = [
+                        {"id": r.id, "label": getattr(r, "name", getattr(r, "login", getattr(r, "title", str(r.id))))}
+                        for r in rel_items
+                    ]
+                else:
+                    val = getattr(obj, f.name, None)
+                    if hasattr(val, "isoformat"):
+                        val = val.isoformat()
+                    result[f.name] = val
 
             return {"record": result}
     finally:
@@ -198,6 +229,8 @@ async def handle_crud_list(session: JsonRpcSession, params: Dict[str, Any]) -> D
     show_archived = bool(params.get("show_archived", False))
 
     public_fields = meta.get_public_fields()
+    col_fields = meta.get_column_fields()
+    m2m_fields = meta.get_m2m_fields()
     field_names = [f.name for f in public_fields]
     fields_dict = {f.name: f for f in public_fields}
 
@@ -207,9 +240,13 @@ async def handle_crud_list(session: JsonRpcSession, params: Dict[str, Any]) -> D
             ctx = await create_access_context(provider, session, model_name, db)
             scope = await policy.scope(ctx, meta, "read", db)
 
-            # Выбираем только публичные колонки
-            col_exprs = [getattr(cls, f.name) for f in public_fields]
-            query = select(*col_exprs)
+            if m2m_fields:
+                query = select(cls)
+                for m in m2m_fields:
+                    query = query.options(selectinload(getattr(cls, m.name)))
+            else:
+                col_exprs = [getattr(cls, f.name) for f in col_fields]
+                query = select(*col_exprs)
 
             if scope is not None:
                 query = query.where(scope)
@@ -222,7 +259,7 @@ async def handle_crud_list(session: JsonRpcSession, params: Dict[str, Any]) -> D
             if search:
                 escaped = escape_like(search)
                 search_conds = []
-                for f in public_fields:
+                for f in col_fields:
                     if f.searchable:
                         col = getattr(cls, f.name, None)
                         if col is not None:
@@ -233,17 +270,20 @@ async def handle_crud_list(session: JsonRpcSession, params: Dict[str, Any]) -> D
             # Точные фильтры по полям схемы
             if filters and isinstance(filters, dict):
                 for k, v in filters.items():
-                    if v is not None and k in fields_dict:
+                    if v is not None and k in fields_dict and fields_dict[k].type != "m2m":
                         col = getattr(cls, k)
                         coerced_v = coerce_value(fields_dict[k], v)
                         query = query.where(col == coerced_v)
 
             # Сортировка
-            if sort_field and sort_field in fields_dict:
+            if sort_field and sort_field in fields_dict and fields_dict[sort_field].type != "m2m":
                 col = getattr(cls, sort_field)
                 query = query.order_by(col.desc() if sort_dir == "desc" else col.asc())
             elif hasattr(cls, "id"):
                 query = query.order_by(cls.id.desc())
+            elif col_fields:
+                first_col = getattr(cls, col_fields[0].name)
+                query = query.order_by(first_col.asc())
 
             # Общее количество строк (Count)
             count_stmt = select(func.count()).select_from(query.order_by(None).subquery())
@@ -252,17 +292,36 @@ async def handle_crud_list(session: JsonRpcSession, params: Dict[str, Any]) -> D
             # Пагинация
             query = query.offset((page - 1) * page_size).limit(page_size)
             res = await db.execute(query)
-            raw_rows = res.all()
 
             # Сериализация ячеек
             rows = []
-            for row in raw_rows:
-                r_vals = []
-                for val in row:
-                    if hasattr(val, "isoformat"):
-                        val = val.isoformat()
-                    r_vals.append(val)
-                rows.append(r_vals)
+            if m2m_fields:
+                raw_objs = res.scalars().all()
+                for obj in raw_objs:
+                    r_vals = []
+                    for f in public_fields:
+                        if f.type == "m2m":
+                            rel_items = getattr(obj, f.name, []) or []
+                            m2m_str_list = [
+                                getattr(r, "name", getattr(r, "login", getattr(r, "title", str(r.id))))
+                                for r in rel_items
+                            ]
+                            r_vals.append(m2m_str_list)
+                        else:
+                            val = getattr(obj, f.name, None)
+                            if hasattr(val, "isoformat"):
+                                val = val.isoformat()
+                            r_vals.append(val)
+                    rows.append(r_vals)
+            else:
+                raw_rows = res.all()
+                for row in raw_rows:
+                    r_vals = []
+                    for val in row:
+                        if hasattr(val, "isoformat"):
+                            val = val.isoformat()
+                        r_vals.append(val)
+                    rows.append(r_vals)
 
             return {
                 "total": total,
@@ -304,24 +363,63 @@ async def handle_crud_update_cell(session: JsonRpcSession, params: Dict[str, Any
                     raise RPCError(-32602, f"Поле '{field}' защищено от записи (read-only)")
                 raise RPCError(-32602, f"Поле '{field}' недоступно для редактирования")
 
+            # Защита системных ролей от переименования
+            if model_name in ("auth_role", "Role") and field == "name":
+                from rsgi_wsrpc.core.constants import SYSTEM_ROLES
+                stmt_check = select(cls).where(cls.id == record_id)
+                role_obj = (await db.execute(stmt_check)).scalar_one_or_none()
+                if role_obj and role_obj.name in SYSTEM_ROLES:
+                    raise RPCError(-32602, f"Системная роль '{role_obj.name}' является встроенной (immutable) и не может быть переименована")
+
             field_meta = meta.fields[field]
-            coerced_value = coerce_value(field_meta, value)
-            scope = await policy.scope(ctx, meta, "update", db)
 
-            stmt = update(cls).where(cls.id == record_id)
-            if scope is not None:
-                stmt = stmt.where(scope)
+            if field_meta.type == "m2m":
+                target_meta = ModelRegistry.get(field_meta.target_model) if field_meta.target_model else None
+                if not target_meta:
+                    raise RPCError(-32602, f"Целевая модель '{field_meta.target_model}' не зарегистрирована в CRUD")
+                target_cls = target_meta.model_cls
+                stmt_obj = select(cls).options(selectinload(getattr(cls, field))).where(cls.id == record_id)
+                obj = (await db.execute(stmt_obj)).scalar_one_or_none()
+                if not obj:
+                    raise RPCError(-32004, f"Запись #{record_id} не найдена")
 
-            values_to_update: Dict[str, Any] = {field: coerced_value}
-            if hasattr(cls, "updated_at"):
-                values_to_update["updated_at"] = datetime.now(timezone.utc)
+                val_list = [value] if not isinstance(value, (list, set, tuple)) else list(value)
+                id_vals = [int(v) for v in val_list if str(v).isdigit()]
+                str_vals = [str(v) for v in val_list if not str(v).isdigit()]
+                conds = []
+                if id_vals:
+                    conds.append(target_cls.id.in_(id_vals))
+                if str_vals and hasattr(target_cls, "name"):
+                    conds.append(target_cls.name.in_(str_vals))
+                elif str_vals and hasattr(target_cls, "login"):
+                    conds.append(target_cls.login.in_(str_vals))
 
-            stmt = stmt.values(**values_to_update)
-            result = await db.execute(stmt)
-            await db.commit()
+                target_objs = []
+                if conds:
+                    stmt_targets = select(target_cls).where(or_(*conds))
+                    target_objs = (await db.execute(stmt_targets)).scalars().all()
 
-            if result.rowcount == 0:
-                raise RPCError(-32004, f"Запись #{record_id} не найдена или доступ ограничен")
+                setattr(obj, field, list(target_objs))
+                await db.commit()
+                coerced_value = [getattr(r, "name", getattr(r, "login", str(r.id))) for r in target_objs]
+            else:
+                coerced_value = coerce_value(field_meta, value)
+                scope = await policy.scope(ctx, meta, "update", db)
+
+                stmt = update(cls).where(cls.id == record_id)
+                if scope is not None:
+                    stmt = stmt.where(scope)
+
+                values_to_update: Dict[str, Any] = {field: coerced_value}
+                if hasattr(cls, "updated_at"):
+                    values_to_update["updated_at"] = datetime.now(timezone.utc)
+
+                stmt = stmt.values(**values_to_update)
+                result = await db.execute(stmt)
+                await db.commit()
+
+                if result.rowcount == 0:
+                    raise RPCError(-32004, f"Запись #{record_id} не найдена или доступ ограничен")
 
         # Безопасное оповещение без значений полей
         await notify_crud_change(
@@ -331,6 +429,13 @@ async def handle_crud_update_cell(session: JsonRpcSession, params: Dict[str, Any
             by_user=ctx.user_name,
             exclude_session=session
         )
+
+        if model_name in ("auth_rpc_permission", "RpcPermission"):
+            try:
+                from rsgi_wsrpc.plugins.auth.discovery import reload_public_rpc_cache
+                await reload_public_rpc_cache()
+            except Exception:
+                pass
 
         return {"success": True, "field": field, "value": coerced_value}
     finally:
@@ -424,7 +529,26 @@ async def handle_crud_delete(session: JsonRpcSession, params: Dict[str, Any]) ->
             ctx = await create_access_context(provider, session, model_name, db)
             scope = await policy.scope(ctx, meta, "delete", db)
 
-            stmt = delete(cls).where(cls.id == record_id)
+            # Защита системных ролей от удаления
+            if model_name in ("auth_role", "Role"):
+                from rsgi_wsrpc.core.constants import SYSTEM_ROLES
+                stmt_check = select(cls).where(cls.id == record_id)
+                role_obj = (await db.execute(stmt_check)).scalar_one_or_none()
+                if role_obj and role_obj.name in SYSTEM_ROLES:
+                    raise RPCError(-32602, f"Системная роль '{role_obj.name}' является встроенной (immutable) и не может быть удалена")
+
+            mapper = inspect(cls)
+            pk_cols = list(mapper.primary_key)
+            if hasattr(cls, "id"):
+                pk_cond = (cls.id == record_id)
+            elif len(pk_cols) == 1:
+                pk_cond = (pk_cols[0] == record_id)
+            else:
+                parts = str(record_id).split("_") if "_" in str(record_id) else [record_id]
+                conds = [pk_cols[i] == int(parts[i]) for i in range(min(len(pk_cols), len(parts)))]
+                pk_cond = and_(*conds)
+
+            stmt = delete(cls).where(pk_cond)
             if scope is not None:
                 stmt = stmt.where(scope)
 
@@ -441,6 +565,13 @@ async def handle_crud_delete(session: JsonRpcSession, params: Dict[str, Any]) ->
             by_user=ctx.user_name,
             exclude_session=session
         )
+
+        if model_name in ("auth_rpc_permission", "RpcPermission"):
+            try:
+                from rsgi_wsrpc.plugins.auth.discovery import reload_public_rpc_cache
+                await reload_public_rpc_cache()
+            except Exception:
+                pass
 
         return {"success": True, "id": record_id}
     finally:
@@ -476,10 +607,15 @@ async def handle_crud_create(session: JsonRpcSession, params: Dict[str, Any]) ->
                 if not (can_transfer or (acting_for_id in ctx.effective_user_ids)):
                     raise RPCError(-32003, "Запрещено создавать запись от чужого имени без полномочий замещения")
 
+            m2m_inputs = {}
+            for m in meta.get_m2m_fields():
+                if m.name in data:
+                    m2m_inputs[m.name] = data[m.name]
+
             allowed = policy.allowed_fields(ctx, meta, "create")
             filtered_data = {}
             for k, v in data.items():
-                if k in allowed:
+                if k in allowed and meta.fields[k].type != "m2m":
                     filtered_data[k] = coerce_value(meta.fields[k], v)
 
             # Авто-заполнение creator_id и owner_id
@@ -500,6 +636,29 @@ async def handle_crud_create(session: JsonRpcSession, params: Dict[str, Any]) ->
 
             obj = cls(**filtered_data)
             db.add(obj)
+            await db.flush()
+
+            # Сохранение Many-to-Many связей
+            if m2m_inputs:
+                for m_name, raw_vals in m2m_inputs.items():
+                    target_m = meta.fields[m_name]
+                    target_meta = ModelRegistry.get(target_m.target_model) if target_m.target_model else None
+                    if target_meta and raw_vals:
+                        target_cls = target_meta.model_cls
+                        val_list = [raw_vals] if not isinstance(raw_vals, (list, set, tuple)) else list(raw_vals)
+                        id_vals = [int(v) for v in val_list if str(v).isdigit()]
+                        str_vals = [str(v) for v in val_list if not str(v).isdigit()]
+                        conds = []
+                        if id_vals:
+                            conds.append(target_cls.id.in_(id_vals))
+                        if str_vals and hasattr(target_cls, "name"):
+                            conds.append(target_cls.name.in_(str_vals))
+                        elif str_vals and hasattr(target_cls, "login"):
+                            conds.append(target_cls.login.in_(str_vals))
+                        if conds:
+                            target_objs = (await db.execute(select(target_cls).where(or_(*conds)))).scalars().all()
+                            setattr(obj, m_name, list(target_objs))
+
             await db.commit()
             await db.refresh(obj)
             new_id = getattr(obj, "id", None)
@@ -513,6 +672,38 @@ async def handle_crud_create(session: JsonRpcSession, params: Dict[str, Any]) ->
         )
 
         return {"success": True, "id": new_id}
+    finally:
+        system_bypass_ctx.reset(token)
+
+
+async def handle_crud_lookup(session: JsonRpcSession, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Возвращает краткий список записей модели для селектов и FK/M2M-лукапов."""
+    model_name = params.get("model")
+    if not model_name:
+        raise RPCError(-32602, "Параметр 'model' обязателен")
+
+    meta = _get_model_meta(model_name)
+    cls = meta.model_cls
+
+    token = system_bypass_ctx.set(True)
+    try:
+        async with async_session() as db:
+            label_col = None
+            for candidate in ("name", "title", "login", "label", "key"):
+                if hasattr(cls, candidate):
+                    label_col = getattr(cls, candidate)
+                    break
+
+            if label_col is not None:
+                stmt = select(cls.id, label_col).order_by(label_col.asc()).limit(500)
+                res = await db.execute(stmt)
+                items = [{"id": r[0], "label": str(r[1]) if r[1] is not None else f"#{r[0]}"} for r in res.all()]
+            else:
+                stmt = select(cls.id).order_by(cls.id.asc()).limit(500)
+                res = await db.execute(stmt)
+                items = [{"id": r[0], "label": f"#{r[0]}"} for r in res.all()]
+
+            return {"items": items}
     finally:
         system_bypass_ctx.reset(token)
 
@@ -554,3 +745,8 @@ async def crud_bulk_update(session: JsonRpcSession, params: Dict[str, Any]) -> D
 @rpc_method("crud.delete")
 async def crud_delete(session: JsonRpcSession, params: Dict[str, Any]) -> Dict[str, Any]:
     return await handle_crud_delete(session, params)
+
+
+@rpc_method("crud.lookup")
+async def crud_lookup(session: JsonRpcSession, params: Dict[str, Any]) -> Dict[str, Any]:
+    return await handle_crud_lookup(session, params)

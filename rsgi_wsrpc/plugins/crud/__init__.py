@@ -37,8 +37,8 @@ from .handlers import (
     crud_delete,
 )
 from .auth import (
-    set_crud_authenticator,
-    get_crud_authenticator,
+    set_crud_session_validator,
+    get_crud_session_validator,
     create_crud_session,
     get_crud_session,
     revoke_crud_session,
@@ -79,8 +79,8 @@ __all__ = [
     "crud_update_cell",
     "crud_bulk_update",
     "crud_delete",
-    "set_crud_authenticator",
-    "get_crud_authenticator",
+    "set_crud_session_validator",
+    "get_crud_session_validator",
     "create_crud_session",
     "get_crud_session",
     "revoke_crud_session",

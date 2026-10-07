@@ -22,14 +22,26 @@ from .upload import upload_coordinator
 def _get_current_user_id() -> Optional[int]:
     """Извлекает ID текущего авторизованного пользователя из контекста."""
     user = current_user_ctx.get()
-    if not user:
-        return None
-    if isinstance(user, dict):
-        return user.get("id") or user.get("user_id")
-    return getattr(user, "id", None)
+    if user:
+        if isinstance(user, dict):
+            return user.get("id") or user.get("user_id")
+        return getattr(user, "id", None)
+
+    transport = current_transport_ctx.get()
+    if transport:
+        data = getattr(transport, "data", None)
+        if data and hasattr(data, "user_id"):
+            return getattr(data, "user_id")
+        if hasattr(transport, "user_id"):
+            return getattr(transport, "user_id")
+
+    session = current_session_ctx.get()
+    if session and hasattr(session, "user_id"):
+        return getattr(session, "user_id")
+    return None
 
 
-@rpc_method("files.init_upload")
+@rpc_method("files.init_upload", public=True)
 async def files_init_upload(
     files_count: int = 1,
     total_expected_size: int = 0,
@@ -56,7 +68,7 @@ async def files_init_upload(
     }
 
 
-@rpc_method("files.commit")
+@rpc_method("files.commit", public=True)
 async def files_commit(
     folder_hash: str,
     metadata: Optional[List[Dict[str, Any]]] = None,
@@ -85,7 +97,7 @@ async def files_commit(
     }
 
 
-@rpc_method("files.rollback")
+@rpc_method("files.rollback", public=True)
 async def files_rollback(folder_hash: str) -> Dict[str, Any]:
     """
     Явный откат транзакции загрузки со стороны клиента.

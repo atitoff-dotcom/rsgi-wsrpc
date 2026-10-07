@@ -56,6 +56,7 @@ class FieldMeta:
     widget: Optional[str] = None
     options: Optional[List[Any]] = None
     foreign_key: Optional[Dict[str, Any]] = None
+    target_model: Optional[str] = None
 
     def to_schema_dict(self, can_update: bool = True) -> Dict[str, Any]:
         """Сериализация поля в JSON-схему для фронтенда."""
@@ -78,6 +79,8 @@ class FieldMeta:
         if self.foreign_key:
             data["type"] = "fk"
             data["foreign_key"] = self.foreign_key
+        if self.target_model:
+            data["target_model"] = self.target_model
         return data
 
 
@@ -90,6 +93,7 @@ class ModelMeta:
     verbose_name_plural: str
     is_row_secure: bool
     is_archivable: bool
+    is_internal: bool = False
     fields: Dict[str, FieldMeta] = field(default_factory=dict)
     hidden_fields: Set[str] = field(default_factory=set)
     readonly_fields: Set[str] = field(default_factory=set)
@@ -98,6 +102,14 @@ class ModelMeta:
     def get_public_fields(self) -> List[FieldMeta]:
         """Возвращает список только открытых (не скрытых) полей."""
         return [f for f in self.fields.values() if not f.hidden]
+
+    def get_m2m_fields(self) -> List[FieldMeta]:
+        """Возвращает список Many-to-Many полей."""
+        return [f for f in self.fields.values() if f.type == "m2m" and not f.hidden]
+
+    def get_column_fields(self) -> List[FieldMeta]:
+        """Возвращает список только прямых колонок таблицы (без M2M связей)."""
+        return [f for f in self.fields.values() if f.type != "m2m" and not f.hidden]
 
     def to_schema_dict(self, permissions: Dict[str, bool]) -> Dict[str, Any]:
         """Сериализует модель в схему для фронтенда с учетом прав пользователя."""
@@ -111,6 +123,7 @@ class ModelMeta:
             "verbose_name_plural": self.verbose_name_plural,
             "is_row_secure": self.is_row_secure,
             "is_archivable": self.is_archivable,
+            "is_internal": self.is_internal,
             "permissions": permissions,
             "fields": public_fields,
         }
@@ -127,9 +140,24 @@ def build_model_meta(cls: Type[Any]) -> ModelMeta:
 
     # Чтение настроек из внутреннего class Crud (если объявлен)
     crud_cfg = getattr(cls, "Crud", None)
-    cfg_hidden = set(getattr(crud_cfg, "hidden", set()) or set())
+    raw_hidden = getattr(crud_cfg, "hidden", set())
+    if isinstance(raw_hidden, (set, list, tuple)):
+        cfg_hidden = set(raw_hidden)
+    else:
+        cfg_hidden = set()
+
     cfg_readonly = set(getattr(crud_cfg, "readonly", set()) or set())
     cfg_protected = set(getattr(crud_cfg, "protected", set()) or set())
+
+    # Проверка, является ли модель служебной / скрытой из главного меню
+    is_internal = False
+    if crud_cfg:
+        if getattr(crud_cfg, "internal", False) is True:
+            is_internal = True
+        elif getattr(crud_cfg, "visible", True) is False:
+            is_internal = True
+        elif raw_hidden is True:
+            is_internal = True
 
     # Названия
     v_name = getattr(crud_cfg, "verbose_name", None) or model_name
@@ -214,6 +242,27 @@ def build_model_meta(cls: Type[Any]) -> ModelMeta:
             foreign_key=fk_meta
         )
 
+    # Интроспекция Many-to-Many отношений (relationships со secondary)
+    for rel in mapper.relationships:
+        if rel.secondary is not None and rel.key not in cfg_hidden:
+            target_cls = rel.mapper.class_
+            target_model_name = target_cls.__name__
+            info = getattr(rel, "info", {}) or {}
+            label = info.get("label") or rel.key.replace("_", " ").capitalize()
+            fields_map[rel.key] = FieldMeta(
+                name=rel.key,
+                type="m2m",
+                label=label,
+                primary_key=False,
+                nullable=True,
+                read_only=rel.key in cfg_readonly,
+                protected=rel.key in cfg_protected,
+                hidden=False,
+                searchable=False,
+                widget="m2m_select",
+                target_model=target_model_name
+            )
+
     return ModelMeta(
         key=model_name,
         table_name=table.name,
@@ -222,6 +271,7 @@ def build_model_meta(cls: Type[Any]) -> ModelMeta:
         verbose_name_plural=v_name_plural,
         is_row_secure=is_row_secure,
         is_archivable=is_archivable,
+        is_internal=is_internal,
         fields=fields_map,
         hidden_fields=cfg_hidden,
         readonly_fields=cfg_readonly,

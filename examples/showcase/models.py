@@ -7,7 +7,7 @@ and declarative mapping for plugins.crud (class Crud:).
 
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
-from plugins.db import Base
+from rsgi_wsrpc.plugins.db import Base
 
 
 class Task(Base):
@@ -17,12 +17,14 @@ class Task(Base):
     title = Column(String(255), nullable=False)
     completed = Column(Boolean, default=False, nullable=False)
     priority = Column(String(20), default="normal", nullable=False)
+    owner_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     class Crud:
         verbose_name = "Task"
         verbose_name_plural = "Tasks"
         readonly = {"created_at"}
+        protected = {"owner_id"}
 
     def to_dict(self):
         return {
@@ -30,6 +32,7 @@ class Task(Base):
             "title": self.title,
             "completed": self.completed,
             "priority": self.priority,
+            "owner_id": self.owner_id,
             "created_at": self.created_at.strftime("%H:%M:%S") if self.created_at else "",
         }
 

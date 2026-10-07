@@ -33,6 +33,8 @@ ENV/
 /data/
 /files/
 /logs/
+**/logs/
+**/data/
 
 # IDE & OS
 .idea/
@@ -44,4 +46,7 @@ ENV/
 # Local overrides
 my_settings.yaml
 local_settings.yaml
+
+# Node.js
+node_modules/
 

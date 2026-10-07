@@ -20,6 +20,18 @@ def get_current_session_safe():
     except (ImportError, LookupError):
         return None
 
+def _extract_username_safe(session) -> str:
+    if not session or not getattr(session, "data", None):
+        return "guest"
+    data = session.data
+    if isinstance(data, dict):
+        return str(data.get("user_name") or data.get("username") or data.get("sub") or "guest")
+    for attr in ("user_name", "username", "sub", "login", "name"):
+        val = getattr(data, attr, None)
+        if val:
+            return str(val)
+    return "guest"
+
 class ContextColoredFormatter(logging.Formatter):
     """
     Форматтер для цветного вывода в консоль с автоматическим
@@ -28,7 +40,7 @@ class ContextColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         session = get_current_session_safe()
         if session:
-            user_str = session.data.user_name if (session.data and session.data.user_name) else "guest"
+            user_str = _extract_username_safe(session)
             record.ctx = f"[{session.ip} | {user_str}]"
         else:
             record.ctx = "[SYSTEM]"
@@ -71,7 +83,7 @@ class ContextFileFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         session = get_current_session_safe()
         if session:
-            user_str = session.data.user_name if (session.data and session.data.user_name) else "guest"
+            user_str = _extract_username_safe(session)
             record.ctx = f"[{session.ip} | {user_str}]"
         else:
             record.ctx = "[SYSTEM]"
