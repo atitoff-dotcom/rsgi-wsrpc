@@ -39,11 +39,26 @@ app = RsgiWsrpcApp(
     cors=True
 )
 
+# 4. Dev-helper route for instant admin access (bypassing Zero-Leakage 404 for local dev)
+@app.route("/dev-admin")
+async def dev_admin(scope, proto):
+    token = crud.create_crud_session({"username": "admin", "role": "admin"})
+    proto.response_str(
+        status=302,
+        headers=[
+            ("location", "/crud/"),
+            ("set-cookie", f"rsgi_crud_session={token}; path=/; max-age=86400; SameSite=Lax"),
+            ("content-length", "0"),
+        ],
+        body=""
+    )
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080)
 ```
 
-The admin interface will be immediately available at `http://127.0.0.1:8080/crud/` (or `/admin/`).
+> **Important Security Note (Zero-Leakage 404):**  
+> Direct access to `http://127.0.0.1:8080/crud/` returns `404 Not Found` for unauthenticated requests and non-admins to prevent exposure to scanners. Access requires an admin session cookie (`rsgi_crud_session=<token>` or `rsgi_session=<token>`). For comprehensive integration patterns and troubleshooting, see [docs/crud_panel_guide.md](crud_panel_guide.md).
 
 ---
 

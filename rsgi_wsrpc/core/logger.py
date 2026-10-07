@@ -131,5 +131,47 @@ def setup_logging(level: int = logging.INFO) -> None:
     file_handler.setFormatter(ContextFileFormatter())
     root_logger.addHandler(file_handler)
 
+    # 3. Настройка буфера оперативной памяти для Mission Control Cockpit
+    root_logger.addHandler(_memory_log_handler)
+
+from collections import deque
+import time
+
+_LOG_BUFFER = deque(maxlen=300)
+
+class MemoryLogHandler(logging.Handler):
+    """
+    Кольцевой буфер логов в оперативной памяти для панели управления /admin/system.
+    """
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            session = get_current_session_safe()
+            user_str = _extract_username_safe(session) if session else "SYSTEM"
+            ctx_str = f"[{session.ip} | {user_str}]" if session else "[SYSTEM]"
+            entry = {
+                "timestamp": record.created,
+                "time_str": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created)),
+                "level": record.levelname,
+                "logger": record.name,
+                "ctx": ctx_str,
+                "message": record.getMessage(),
+            }
+            _LOG_BUFFER.append(entry)
+        except Exception:
+            pass
+
+_memory_log_handler = MemoryLogHandler()
+_memory_log_handler.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(_memory_log_handler)
+
 # Экспортируем готовый логгер по умолчанию
 logger = logging.getLogger("app")
+logger.setLevel(logging.INFO)
+logger.addHandler(_memory_log_handler)
+
+def get_recent_logs(limit: int = 150) -> list:
+    """Возвращает последние записи логов из кольцевого буфера памяти."""
+    items = list(_LOG_BUFFER)
+    return items[-limit:]
+
+

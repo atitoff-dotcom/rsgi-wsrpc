@@ -43,8 +43,9 @@ from .auth import (
     get_crud_session,
     revoke_crud_session,
 )
-# Регистрация HTTP-роутов для статики
+# Регистрация HTTP-роутов для статики и системных RPC-методов
 from . import static_handler  # noqa: F401
+from . import admin_handlers  # noqa: F401
 
 __all__ = [
     "IdentityProvider",

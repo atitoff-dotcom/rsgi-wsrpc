@@ -57,6 +57,9 @@ class RsgiWsrpcApp:
         backplane_url: Optional[str] = None,
         enable_seo: bool = False,
         sitemap_host: Optional[str] = None,
+        dev_admin: bool = False,
+        auto_auth_ws: bool = True,
+        auto_auth_models: bool = True,
         custom_settings: Optional[Dict[str, Any]] = None,
         **extra_settings: Any
     ):
@@ -136,9 +139,151 @@ class RsgiWsrpcApp:
         self._session_counter = count()
         self._on_connect_callbacks: List[Callable] = []
 
+        self.dev_admin = dev_admin
+        self.auto_auth_ws = auto_auth_ws
+
+        # Автоматическая регистрация стандартных моделей в CRUD
+        if auto_auth_models:
+            try:
+                from rsgi_wsrpc.plugins.crud.registry import ModelRegistry
+                ModelRegistry.register_auth_models()
+            except Exception:
+                pass
+
+        if self.dev_admin:
+            self._register_dev_admin()
+
         # Граниан связывает __rsgi_init__ и __rsgi_del__ на самом объекте приложения
         self.__rsgi_init__ = self._rsgi_init_handler
         self.__rsgi_del__ = self._rsgi_del_handler
+
+    def _register_dev_admin(self) -> None:
+        """Регистрирует роут /dev-admin и начальный сидинг админа для локальной разработки."""
+        @self.route("/dev-admin", methods=["GET"])
+        async def _dev_admin_route(scope, proto):
+            from rsgi_wsrpc.plugins.crud import create_crud_session
+            token = create_crud_session({"username": "admin", "role": "admin"})
+            proto.response_str(
+                status=302,
+                headers=[
+                    ("location", "/admin/"),
+                    ("set-cookie", f"rsgi_crud_session={token}; path=/; max-age=86400; SameSite=Lax"),
+                    ("content-length", "0"),
+                ],
+                body=""
+            )
+
+        async def _seed_dev_admin():
+            try:
+                from rsgi_wsrpc.plugins.db import async_session
+                from rsgi_wsrpc.plugins.auth import User, Role, system_bypass_ctx
+                from sqlalchemy import select
+                token = system_bypass_ctx.set(True)
+                try:
+                    async with async_session() as db:
+                        admin_user = (await db.execute(select(User).where(User.login == "admin"))).scalar_one_or_none()
+                        if not admin_user:
+                            admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalar_one_or_none()
+                            if not admin_role:
+                                admin_role = Role(name="admin", description="Системный администратор (Superadmin)")
+                                db.add(admin_role)
+                                await db.flush()
+                            user = User(
+                                login="admin",
+                                name="Администратор (Dev)",
+                                password_hash=User._hash_password("admin123")
+                            )
+                            user.roles.append(admin_role)
+                            db.add(user)
+                            await db.commit()
+                            logger.info("[DevAdmin] Создан суперпользователь 'admin' (пароль: admin123)")
+                finally:
+                    system_bypass_ctx.reset(token)
+            except Exception as e:
+                logger.debug(f"[DevAdmin] Пропущен сидинг dev admin: {e}")
+
+        self.on_startup(_seed_dev_admin)
+
+    def _auto_authenticate_ws(self, session: JsonRpcSession) -> None:
+        """Автоматически авторизует WebSocket по Cookie (rsgi_crud_session, rsgi_session, rpc_jwt)."""
+        if session.data is not None:
+            return
+        cookies = session.cookies
+        if not cookies:
+            return
+        token = (
+            cookies.get("rsgi_crud_session")
+            or cookies.get("rsgi_session")
+            or cookies.get("rpc_jwt")
+            or cookies.get("token")
+        )
+        if not token:
+            return
+
+        user_info = None
+        try:
+            from rsgi_wsrpc.plugins.crud.auth import get_crud_session
+            user_info = get_crud_session(token)
+        except Exception:
+            pass
+
+        if not user_info:
+            try:
+                from rsgi_wsrpc.core.security import decode_access_token
+                payload = decode_access_token(token)
+                if payload:
+                    roles = payload.get("roles", [])
+                    role = payload.get("role") or (roles[0] if roles else "user")
+                    is_admin = bool("admin" in roles or "ADMIN" in roles or "superadmin" in roles or payload.get("is_superadmin") or role in ("admin", "ADMIN", "superadmin"))
+                    raw_sub = payload.get("sub", "1")
+                    uid = int(raw_sub) if str(raw_sub).isdigit() else 1
+                    user_info = {
+                        "uid": uid,
+                        "user_id": uid,
+                        "username": payload.get("username", "admin" if is_admin else "user"),
+                        "role": "admin" if is_admin else role,
+                        "roles": roles if roles else [role],
+                        "is_superadmin": is_admin,
+                        "perms_dict": payload.get("permissions") or payload.get("perms_dict") or {},
+                        "allowed_rpc_methods": {"*"} if is_admin else set(payload.get("allowed_rpc_methods", [])),
+                    }
+            except Exception:
+                pass
+
+        if user_info:
+            uid = user_info.get("uid") or user_info.get("user_id", 1)
+            role = user_info.get("role", "user")
+            roles = user_info.get("roles") or [role]
+            is_superadmin = bool(
+                role in ("admin", "ADMIN", "superadmin")
+                or "admin" in roles
+                or "ADMIN" in roles
+                or "superadmin" in roles
+                or user_info.get("is_superadmin")
+            )
+            user_ctx = type("UserCtx", (), {
+                "is_superadmin": is_superadmin,
+                "user_id": uid,
+                "team_ids": user_info.get("team_ids", []),
+                "perms_dict": user_info.get("perms_dict", {}),
+                "allowed_rpc_methods": {"*"} if is_superadmin else set(user_info.get("allowed_rpc_methods", [])),
+            })()
+
+            from rsgi_wsrpc.plugins.auth.core import AuthSession
+            session.data = AuthSession(
+                uid=uid,
+                user=None,
+                user_name=user_info.get("username", "user"),
+                user_role=role,
+                user_roles=roles,
+                session_db_id=0,
+                user_ctx=user_ctx,
+                allowed_rpc_methods={"*"} if is_superadmin else set(user_info.get("allowed_rpc_methods", [])),
+                send_request_cb=getattr(session, "send_request", None),
+                send_stream_cb=getattr(session, "send_stream_chunk", None),
+                close_cb=getattr(session, "close", None),
+            )
+            logger.info(f"[AutoAuth] WebSocket #{session.session_id} автоматически авторизован по Cookie как {user_info.get('username')} ({role})")
 
     # --- ДЕКОРАТОРЫ ---
 
@@ -208,8 +353,8 @@ class RsgiWsrpcApp:
         logger.warning(f"[RsgiWsrpcApp] Неизвестный тип протокола: {proto_type}")
 
     async def _handle_http(self, scope, proto):
-        method = getattr(scope, "method", "GET")
-        path = getattr(scope, "path", "/")
+        method = getattr(scope, "method", None) or (scope.get("method", "GET") if isinstance(scope, dict) else "GET")
+        path = getattr(scope, "path", None) or (scope.get("path", "/") if isinstance(scope, dict) else "/")
 
         # 1. CORS Preflight (OPTIONS)
         if self.cors_enabled and method == "OPTIONS":
@@ -322,6 +467,8 @@ class RsgiWsrpcApp:
                 client_ip = str(client[0])
 
             session = JsonRpcSession(ws, session_id, ip=client_ip, scope=scope)
+            if self.auto_auth_ws:
+                self._auto_authenticate_ws(session)
             for cb in self._on_connect_callbacks:
                 try:
                     if inspect.iscoroutinefunction(cb):

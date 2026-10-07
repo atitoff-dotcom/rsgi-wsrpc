@@ -34,19 +34,58 @@ def create_crud_session(user_info: Dict[str, Any], token: Optional[str] = None) 
     return token
 
 
+_in_validator: bool = False
+
+
 def get_crud_session(token: str) -> Optional[Dict[str, Any]]:
-    """Возвращает информацию о сессии по токену через локальный кэш или системный SSO валидатор."""
+    """Возвращает информацию о сессии по токену через локальный кэш, системный SSO валидатор или нативный JWT."""
+    global _in_validator
     if not token:
         return None
     if token in _ACTIVE_CRUD_SESSIONS:
         return _ACTIVE_CRUD_SESSIONS[token]
-    if _crud_session_validator:
+
+    # 1. Пользовательский SSO валидатор с защитой от рекурсии
+    if _crud_session_validator and not _in_validator:
+        _in_validator = True
         try:
             res = _crud_session_validator(token)
             if res:
                 return res
         except Exception:
             pass
+        finally:
+            _in_validator = False
+
+    # 2. Нативная валидация JWT токенов фреймворка rsgi-wsrpc из коробки
+    try:
+        from rsgi_wsrpc.core.security import decode_access_token
+        payload = decode_access_token(token)
+        if payload:
+            roles = payload.get("roles", [])
+            role = payload.get("role") or (roles[0] if roles else "user")
+            is_superadmin = bool(
+                "admin" in roles
+                or "ADMIN" in roles
+                or "superadmin" in roles
+                or payload.get("is_superadmin")
+                or role in ("admin", "ADMIN", "superadmin")
+            )
+            raw_sub = payload.get("sub", 1)
+            uid = int(raw_sub) if str(raw_sub).isdigit() else 1
+            return {
+                "uid": uid,
+                "user_id": uid,
+                "username": payload.get("username", "admin" if is_superadmin else "user"),
+                "role": "admin" if is_superadmin else role,
+                "roles": roles if roles else [role],
+                "is_superadmin": is_superadmin,
+                "perms_dict": payload.get("permissions") or payload.get("perms_dict") or {},
+                "allowed_rpc_methods": {"*"} if is_superadmin else set(payload.get("allowed_rpc_methods", [])),
+            }
+    except Exception:
+        pass
+
     return None
 
 

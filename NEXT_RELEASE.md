@@ -11,7 +11,45 @@
 
 ---
 
+## ✅ Выполнено в текущем релизе / подготовке:
+* [x] **Надежность, тестирование и безопасность (Industrial Hardening & Benchmarks):**
+  - **Автономный инструмент аудита безопасности ([scripts/security_audit.py](file:///home/alex/rsgi-wsrpc/scripts/security_audit.py)):**
+    - Автоматическая проверка 9 ключевых векторов атак (Zero-Leakage 404, CSWSH, 12MB DoS bomb, JSON-RPC 2.0 Compliance, Prototype Pollution, RBAC Privilege Isolation, CRUD RLS, JWT Forgery `alg:none`).
+    - Умный фоллбэк портов (автоматический переход с 8080 на 8000 при занятом порте) и защита от зависания отдельных зондов.
+  - **Высокопроизводительный стресс-бенчмарк ([scripts/benchmark.py](file:///home/alex/rsgi-wsrpc/scripts/benchmark.py)):**
+    - Замер пропускной способности (>11,000 RPS) и субмиллисекундных перцентилей задержки (p50: 0.9–1.6 ms).
+    - Динамический живой индикатор прогресса в реальном времени (`[████░░░] 65% | 2,400 RPS`).
+    - Учет и документирование встроенного в сессию Token-Bucket Rate Limiter (30 req/sec на сокет).
+  - **Белая книга надежности и документация ([SECURITY_AND_PERFORMANCE.md](file:///home/alex/rsgi-wsrpc/SECURITY_AND_PERFORMANCE.md), [docs/testing.md](file:///home/alex/rsgi-wsrpc/docs/testing.md)):**
+    - Подробное руководство по проведению нагрузочных тестов и аудита безопасности.
+    - Сравнительная таблица производительности `rsgi-wsrpc` против классических Django (WSGI/ASGI) и FastAPI (REST).
+  - **Исправление сидирования витрины ([examples/showcase/server.py](file:///home/alex/rsgi-wsrpc/examples/showcase/server.py)):**
+    - Нативный импорт `User, Role` в хуке `init_database`.
+
 ## ✅ Выполнено в предыдущих релизах
+* [x] **v0.5.2:**
+  - **Единый Mission Control Cockpit (`/admin`):**
+    - Подраздел **`📊 Данные (CRUD)`**: управление зарегистрированными бизнес-моделями и матрицей прав доступа.
+    - Подраздел **`⚙️ Система (System Cockpit)`**:
+      - `admin.sessions_list` & `admin.session_kill`: мониторинг открытых дуплексных WebSocket-соединений и отключение клиентов (Kick).
+      - `system.cache_stats` & `system.cache_invalidate`: инспекция монотонных версий тегов Smart Cache (RFC 0001) и ручная инвалидация.
+      - `system.broadcast`: O(1) Zero-Copy рассылка системных уведомлений без блокировки сокетов.
+      - `system.recent_logs`: кольцевой буфер оперативного журнала событий сервера в памяти с авто-обновлением (Live Log Streamer).
+      - `system.get_config`: инспекция Runtime Config с маскированием секретных ключей.
+  - **Теплая бежево-коричневая палитра оформления:**
+    - **Светлая тема:** строго 80% от самого светлого в теплых бежевых тонах (`#dcd3c6` / `#e8e0d4` / `#2d221a`).
+    - **Темная тема:** строго 20% от самого светлого в теплых коричневатых тонах (`#33241b` / `#3d2c22` / `#ece5dc`).
+  - **Системная надежность ядра:**
+    - Поддержка проверки `CloseMessage` по `__class__.__name__` для нативных RSGI-фреймов Granian и тестовых сокетов.
+* [x] **v0.5.1:**
+
+  - **Zero-Boilerplate DX (Developer Experience):**
+    - `auto_auth_ws=True` (по умолчанию включено): автоматическая авторизация WebSocket-сессий по Cookie (`rsgi_crud_session`, `rsgi_session`, `rpc_jwt`, `token`) без необходимости писать ручной код в `@app.on_connect`.
+    - Режим быстрой локальной разработки `dev_admin=True` в `RsgiWsrpcApp`: автоматическая регистрация `/dev-admin` с установкой Cookie и безопасный сидинг пользователя `admin`/`admin123`.
+    - Бесшовная интеграция `plugins.crud` и `plugins.auth`: `get_crud_session` нативно валидирует JWT-токены фреймворка и защищен от циклической рекурсии.
+    - Динамический ре-бинд базы данных (`AsyncEngineProxy` и `configure_db`): параметры `database_url` и `db_echo` в `RsgiWsrpcApp` и `configure()` прозрачно переконфигурируют движок и `async_session` независимо от порядка импортов в коде.
+    - Алиас `send_stream_chunk` в `AuthSession` для соответствия контракту потокового стриминга.
+    - Автоматическая регистрация моделей безопасности (`User`, `Role`, `RpcPermission`) в `ModelRegistry.register_auth_models()`.
 * [x] **v0.5.0:**
   - **Новый GUI управления доступом и разрешениями (CRUD + RPC):** разделение прав на данные (CRUD-матрица для моделей) и процедурных прав (RPC), персональные разрешения поверх ролевых, модалка `PermissionsModal.svelte`.
   - **Навигация субъектов доступа (Гости, Пользователи, Роли):** поддержка `target_type = "guest"`, Zero-Noise скрытие кнопки при `allow_guests=False`.

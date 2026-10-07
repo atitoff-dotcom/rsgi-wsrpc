@@ -51,6 +51,17 @@ class ModelRegistry:
         return cls._models
 
     @classmethod
+    def register_auth_models(cls) -> None:
+        """Регистрирует стандартные модели безопасности (User, Role, RpcPermission) в CRUD."""
+        try:
+            from rsgi_wsrpc.plugins.auth import User, Role, RpcPermission
+            cls.register(User)
+            cls.register(Role)
+            cls.register(RpcPermission)
+        except Exception:
+            pass
+
+    @classmethod
     def auto_discover(cls, base_cls: Type[Any]) -> None:
         """
         Автоматически находит все mapped-модели в DeclarativeBase SQLAlchemy

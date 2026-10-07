@@ -20,6 +20,7 @@
    * [Authentication & User Plugin (auth)](#2-authentication--user-plugin-pluginsauth)
    * [Two-Phase File Upload Plugin (files)](#3-two-phase-file-upload-plugin-pluginsfiles)
    * [Smart Event-Driven Cache Plugin (smart_cache)](#4-smart-event-driven-cache-plugin-pluginssmart_cache)
+   * [Reactive CRUD & Admin Plugin (crud) (docs/crud.md)](docs/crud.md) ([Integration Guide](docs/crud_panel_guide.md))
    * [Modular Backend Test Framework (tests/)](#5-modular-backend-test-framework-tests)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
@@ -453,6 +454,17 @@ The framework includes pre-built and tested system batteries in `app/system/`:
   * `PersonaManager`: pre-authenticated sessions (`admin`, `user`, `guest`) with automatic local database seeding and RLS bypass.
   * Native verification of streaming (`stream: true`), push notification interception (`cache.invalidate`, `cache.patch`), and two-phase uploads.
   * Built-in stress & load testing (`tests/suites/test_load.py`): benchmarks RPS, latency percentiles (p50/p95/p99), and broadcast fan-out reliability.
+
+---
+
+### 6. Reactive CRUD & Standalone Admin Panel (`plugins/crud`)
+* Architecture specification: **[docs/crud.md](docs/crud.md)**.
+* Integration & Troubleshooting Guide: **[docs/crud_panel_guide.md](docs/crud_panel_guide.md)**.
+* **Turnkey Administration & Auto-Generated WSRPC API**:
+  * Automatic schema introspection with RFC 0002 tabular matrix compression (`fields`, `rows`).
+  * Built-in Single Page Application (Svelte 5 + Tailwind v4) served via native Granian RSGI Zero-Copy (`proto.response_file`) on `/crud` and `/admin`.
+  * **Zero-Leakage (404 Not Found)** security model: completely conceals the administration panel from unauthenticated requests and non-administrators.
+  * Seamless SSO integration via `create_crud_session` or `set_crud_session_validator`.
 
 ---
 

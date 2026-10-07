@@ -84,6 +84,18 @@ class AuthSession:
         self._send_stream_cb = send_stream_cb
         self._close_cb = close_cb
 
+    @property
+    def user_id(self) -> int:
+        return self.uid
+
+    @property
+    def username(self) -> str:
+        return self.user_name
+
+    @property
+    def role_name(self) -> Any:
+        return self.user_role
+
     def has_rpc_permission(self, method_name: str) -> bool:
         """Проверяет право на вызов RPC-метода (O(1) in-memory)."""
         if self.user_ctx and getattr(self.user_ctx, "is_superadmin", False):
@@ -105,6 +117,10 @@ class AuthSession:
     async def send_stream(self, rpc_id: Any, chunk: Any):
         if self._send_stream_cb:
             return await self._send_stream_cb(rpc_id, chunk)
+
+    async def send_stream_chunk(self, rpc_id: Any, chunk: Any):
+        """Алиас для send_stream для соответствия контракту session.send_stream_chunk."""
+        return await self.send_stream(rpc_id, chunk)
 
     async def close(self):
         if self._close_cb:

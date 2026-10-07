@@ -206,6 +206,7 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
    ```python
    from rsgi_wsrpc.plugins.crud import ModelRegistry
    ModelRegistry.register(Task)
+   # или ModelRegistry.auto_discover(Base)
    ```
 2. Декларативное описание модели (`class Crud:`):
    ```python
@@ -221,6 +222,11 @@ await broadcast_notification("order.updated", {"order_id": 105, "status": "shipp
            protected = {"owner_id"}
    ```
 3. Контракт методов WSRPC: `crud.schema`, `crud.list` ($tabular), `crud.get`, `crud.create`, `crud.update_cell`, `crud.bulk_update`, `crud.delete`.
+4. ⚠️ **Безопасность панели (Zero-Leakage 404):**
+   - Переход на `http://localhost:8080/crud` вернет **404 Not Found**, если в запросе нет Cookie сессии администратора (`rsgi_crud_session` или `rsgi_session`). Это защитная мера, а не ошибка роутинга!
+   - **Для локальной разработки:** передайте `dev_admin=True` в `RsgiWsrpcApp(dev_admin=True)` — сервер сам зарегистрирует роут `/dev-admin`, выдаст куку сессии и создаст `admin/admin123`.
+   - **В приложении:** сокеты и панель управления нативно авторизуются по Cookie/JWT (`auto_auth_ws=True`), а при сторонней авторизации поддерживается `set_crud_session_validator(func)`.
+   - Подробное руководство: [docs/crud_panel_guide.md](docs/crud_panel_guide.md).
 
 ---
 

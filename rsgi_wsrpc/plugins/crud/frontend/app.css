@@ -4,40 +4,41 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: #f8fafc;
-    --foreground: #0f172a;
-    --card: #ffffff;
-    --card-foreground: #0f172a;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
-    --border: #e2e8f0;
-    --input: #e2e8f0;
-    --primary: #2563eb;
+    /* Светлая тема: 80% от самого светлого в теплых бежевых тонах */
+    --background: #dcd3c6;
+    --foreground: #2d221a;
+    --card: #e8e0d4;
+    --card-foreground: #2d221a;
+    --muted: #cfc4b5;
+    --muted-foreground: #6e5e51;
+    --border: #beaf9e;
+    --input: #beaf9e;
+    --primary: #b7521e;
     --primary-foreground: #ffffff;
-    --secondary: #f1f5f9;
-    --secondary-foreground: #0f172a;
-    --destructive: #ef4444;
+    --secondary: #d1c7b8;
+    --secondary-foreground: #2d221a;
+    --destructive: #c2410c;
     --destructive-foreground: #ffffff;
     --radius: 0.5rem;
   }
 
   .dark {
     color-scheme: dark;
-    /* Благородная темно-серая палитра (Slate/Charcoal) */
-    --background: #18191d;
-    --foreground: #e4e7eb;
-    --card: #22252c;
-    --card-foreground: #e4e7eb;
-    --muted: #2a2e37;
-    --muted-foreground: #9ca3af;
-    --border: #2f333e;
-    --input: #2f333e;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --secondary: #2a2e37;
-    --secondary-foreground: #e4e7eb;
-    --destructive: #f87171;
-    --destructive-foreground: #18191d;
+    /* Темная тема: 20% от самого светлого в теплых коричневатых тонах */
+    --background: #33241b;
+    --foreground: #ece5dc;
+    --card: #3d2c22;
+    --card-foreground: #ece5dc;
+    --muted: #4a382c;
+    --muted-foreground: #ad9f92;
+    --border: #5c4739;
+    --input: #5c4739;
+    --primary: #d97706;
+    --primary-foreground: #1c130d;
+    --secondary: #4a382c;
+    --secondary-foreground: #ece5dc;
+    --destructive: #ea580c;
+    --destructive-foreground: #1c130d;
   }
 
   * {
@@ -52,4 +53,45 @@
     padding: 0;
     min-height: 100vh;
   }
+}
+
+/* Бесшовная привязка компонентов к теплой бежево-коричневой палитре */
+.bg-white {
+  background-color: var(--card) !important;
+}
+.dark .dark\:bg-slate-900,
+.dark .dark\:bg-slate-950 {
+  background-color: var(--card) !important;
+}
+.dark .dark\:bg-slate-800 {
+  background-color: var(--muted) !important;
+}
+.bg-slate-50,
+.bg-slate-100 {
+  background-color: var(--secondary) !important;
+}
+.border-slate-100,
+.border-slate-200,
+.border-slate-300 {
+  border-color: var(--border) !important;
+}
+.dark .dark\:border-slate-800,
+.dark .dark\:border-slate-700 {
+  border-color: var(--border) !important;
+}
+.text-slate-900,
+.text-slate-800 {
+  color: var(--foreground) !important;
+}
+.dark .dark\:text-slate-100,
+.dark .dark\:text-slate-200 {
+  color: var(--foreground) !important;
+}
+.text-slate-500,
+.text-slate-600 {
+  color: var(--muted-foreground) !important;
+}
+.dark .dark\:text-slate-300,
+.dark .dark\:text-slate-400 {
+  color: var(--muted-foreground) !important;
 }

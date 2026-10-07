@@ -3,8 +3,20 @@
   import { rpc, wsStatus as canonicalWsStatus } from "@wsrpc/wsrpc";
   import PermissionsModal from "./components/PermissionsModal.svelte";
   import GuestPermissionsView from "./components/GuestPermissionsView.svelte";
+  import SystemCockpit from "./components/SystemCockpit.svelte";
 
   let wsStatus = $state<"CONNECTING" | "CONNECTED" | "DISCONNECTED">("DISCONNECTED");
+
+  // Секции Mission Control (/admin/crud vs /admin/system)
+  type AdminSection = "crud" | "system";
+  let currentSection = $state<AdminSection>("crud");
+
+  function setSection(sec: AdminSection) {
+    currentSection = sec;
+    try {
+      window.location.hash = sec === "system" ? "system" : "crud";
+    } catch {}
+  }
 
   // Тема (светлая / темно-серая)
   let isDarkMode = $state(false);
@@ -637,6 +649,15 @@
       lang = savedLang;
     }
 
+    if (window.location.hash === "#system" || window.location.pathname.endsWith("/system")) {
+      currentSection = "system";
+    }
+    const onHashChange = () => {
+      if (window.location.hash === "#system") currentSection = "system";
+      else if (window.location.hash === "#crud") currentSection = "crud";
+    };
+    window.addEventListener("hashchange", onHashChange);
+
     const unsubStatus = canonicalWsStatus.subscribe((s) => {
       console.info("[CRUD Admin] 📶 Смена статуса WebSocket:", s);
       wsStatus = s;
@@ -659,6 +680,7 @@
 
     return () => {
       console.info("[CRUD Admin] 🛑 onMount cleanup (отписка и отключение)");
+      window.removeEventListener("hashchange", onHashChange);
       unsubStatus();
       unsubCache();
       unsubCrud();
@@ -679,14 +701,38 @@
 
 <div class="min-h-screen bg-background text-foreground flex flex-col font-sans transition-colors duration-200">
   <!-- Верхняя панель (Header) -->
-  <header class="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-md px-6 py-3.5 flex items-center justify-between shadow-2xs">
-    <div class="flex items-center gap-4">
+  <header class="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-md px-6 py-2.5 flex items-center justify-between shadow-2xs">
+    <div class="flex items-center gap-6">
       <div class="flex items-center gap-2.5">
-        <div class="h-7 w-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-sm">
-          🗄️
+        <div class="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-base shadow-2xs">
+          🛡️
         </div>
-        <span class="text-base font-bold tracking-tight text-foreground">{t.title}</span>
+        <div class="flex flex-col">
+          <span class="text-sm font-bold tracking-tight text-foreground">Mission Control</span>
+          <span class="text-[10px] text-muted-foreground font-mono leading-none">rsgi-wsrpc engine</span>
+        </div>
       </div>
+
+      <!-- Главный переключатель Mission Control: CRUD vs SYSTEM -->
+      <nav class="flex items-center p-1 rounded-xl bg-muted/60 border border-border">
+        <button
+          type="button"
+          onclick={() => setSection("crud")}
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer {currentSection === 'crud' ? 'bg-primary text-primary-foreground shadow-xs' : 'text-foreground hover:bg-muted'}"
+        >
+          <span>📊</span>
+          <span>{lang === 'ru' ? 'Данные (CRUD)' : 'Data (CRUD)'}</span>
+        </button>
+
+        <button
+          type="button"
+          onclick={() => setSection("system")}
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer {currentSection === 'system' ? 'bg-primary text-primary-foreground shadow-xs' : 'text-foreground hover:bg-muted'}"
+        >
+          <span>⚙️</span>
+          <span>{lang === 'ru' ? 'Система (System)' : 'System Cockpit'}</span>
+        </button>
+      </nav>
     </div>
 
     <!-- Правая часть: статус подключения, переключатель языка и темы -->
@@ -723,6 +769,9 @@
     </div>
   </header>
 
+  {#if currentSection === "system"}
+    <SystemCockpit {lang} />
+  {:else}
   <div class="flex-1 flex overflow-hidden">
     <!-- Боковая панель навигации слева (Sidebar) -->
     <aside class="w-60 border-r border-border bg-card/40 flex flex-col p-4 gap-6 shrink-0 overflow-y-auto">
@@ -1071,6 +1120,7 @@
     {/if}
   </main>
 </div>
+{/if}
 
   <!-- Модальное окно создания -->
   {#if isCreateModalOpen && currentSchema}

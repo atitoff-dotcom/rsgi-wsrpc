@@ -21,7 +21,9 @@
    * [Two-Phase File Upload Plugin (files)](#3-two-phase-file-upload-plugin-pluginsfiles)
    * [Smart Event-Driven Cache Plugin (smart_cache)](#4-smart-event-driven-cache-plugin-pluginssmart_cache)
    * [Modular Backend Test Framework (tests/)](#5-modular-backend-test-framework-tests)
+   * [🛡️ Security Whitepaper & Benchmarks (SECURITY_AND_PERFORMANCE.md)](SECURITY_AND_PERFORMANCE.md)
 8. [Creating Custom Plugins & Modules in the app Directory](#-creating-custom-plugins--modules-in-the-app-directory)
+
 9. [Client Library (TypeScript/JavaScript)](#-client-library-typescriptjavascript)
 10. [🌟 What's New in v0.3.3](#-whats-new-in-v033)
 11. [License](#-license)
@@ -456,7 +458,27 @@ The framework includes pre-built and tested system batteries in `app/system/`:
 
 ---
 
+### 6. Industrial Reliability, Security Audit & High-Load Benchmarks
+* Full Security Whitepaper: see **[SECURITY_AND_PERFORMANCE.md](SECURITY_AND_PERFORMANCE.md)**.
+* Complete Testing & Benchmarking Manual: see **[docs/testing.md](docs/testing.md)**.
+* **Autonomous External Security Auditor (`scripts/security_audit.py`)**:
+  * Automated black-box penetration tester covering **9 critical attack vectors**: Zero-Leakage 404, Header Leakage, CSWSH, 12MB DoS Bombs, JSON-RPC Compliance, Prototype Pollution, RBAC Privilege Isolation, CRUD RLS, and `alg:none` JWT Forgery.
+  ```bash
+  # Run 9/9 pentest suite (auto-detects port 8080 or 8000)
+  python scripts/security_audit.py --target http://127.0.0.1:8080
+  ```
+* **High-Throughput Open Stress Benchmark (`scripts/benchmark.py`)**:
+  * Standalone tool with real-time ASCII progress bar, measuring true WebSocket throughput (>11,000 RPS single-worker), sub-millisecond latencies (p50: 0.9–1.6 ms), and wire bandwidth.
+  * Honors kernel Token-Bucket DoS rate limiting (30 req/sec per socket).
+  ```bash
+  # Run stress test (500 concurrent sockets, 12,500 requests)
+  python scripts/benchmark.py --target http://127.0.0.1:8080 --concurrency 500 --requests 12500
+  ```
+
+---
+
 ## 🛠 Creating Custom Plugins & Modules in the app Directory
+
 
 Creating a custom feature module (e.g. support ticket system `app/tickets/`) is straightforward:
 

@@ -27,21 +27,20 @@ if not _db_url:
 if not _db_url:
     _db_url = "sqlite:///./data/app.db"
 
-DATABASE_URL = _db_url
-
-# Адаптируем протоколы под асинхронные драйверы SQLAlchemy
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://")
-elif DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-elif DATABASE_URL.startswith("mysql://"):
-    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+asyncmy://")
-elif DATABASE_URL.startswith("sqlite://"):
-    DATABASE_URL = DATABASE_URL.replace("sqlite://", "sqlite+aiosqlite://")
-    sqlite_path = DATABASE_URL.replace("sqlite+aiosqlite:///", "")
-    dir_path = os.path.dirname(sqlite_path)
-    if dir_path:
-        os.makedirs(dir_path, exist_ok=True)
+def _normalize_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://")
+    elif url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://")
+    elif url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+asyncmy://")
+    elif url.startswith("sqlite://"):
+        url = url.replace("sqlite://", "sqlite+aiosqlite://")
+        sqlite_path = url.replace("sqlite+aiosqlite:///", "")
+        dir_path = os.path.dirname(sqlite_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+    return url
 
 
 def orjson_dumps(val: Any) -> str:
@@ -56,41 +55,66 @@ if not _db_echo:
     except Exception:
         pass
 
-engine_kwargs: Dict[str, Any] = {
-    "echo": _db_echo,
-    "json_serializer": orjson_dumps,
-    "json_deserializer": orjson.loads,
-}
 
-if "postgresql" in DATABASE_URL:
-    pool_size = int(os.environ.get("DB_POOL_SIZE", "5"))
-    max_overflow = int(os.environ.get("DB_MAX_OVERFLOW", "3"))
-    pool_timeout = int(os.environ.get("DB_POOL_TIMEOUT", "30"))
-    pool_recycle = int(os.environ.get("DB_POOL_RECYCLE", "1800"))
-    engine_kwargs.update({
-        "pool_size": pool_size,
-        "max_overflow": max_overflow,
-        "pool_timeout": pool_timeout,
-        "pool_recycle": pool_recycle,
-        "pool_pre_ping": True,
-    })
+def _build_engine(raw_url: str, echo: bool = False):
+    norm_url = _normalize_database_url(raw_url)
+    engine_kwargs: Dict[str, Any] = {
+        "echo": echo,
+        "json_serializer": orjson_dumps,
+        "json_deserializer": orjson.loads,
+    }
+    if "postgresql" in norm_url:
+        engine_kwargs.update({
+            "pool_size": int(os.environ.get("DB_POOL_SIZE", "5")),
+            "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "3")),
+            "pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT", "30")),
+            "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", "1800")),
+            "pool_pre_ping": True,
+        })
+    eng = create_async_engine(norm_url, **engine_kwargs)
+    if "sqlite" in norm_url:
+        @event.listens_for(eng.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+    return eng
 
-engine = create_async_engine(DATABASE_URL, **engine_kwargs)
+
+DATABASE_URL = _normalize_database_url(_db_url)
+_active_engine = _build_engine(DATABASE_URL, _db_echo)
 
 
-@event.listens_for(engine.sync_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    if "sqlite" in DATABASE_URL:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.close()
+class AsyncEngineProxy:
+    """Динамический прокси для AsyncEngine, устраняющий зависимость от порядка импортов."""
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_active_engine, name)
 
+    def __repr__(self) -> str:
+        return repr(_active_engine)
+
+
+engine: Any = AsyncEngineProxy()
 
 # Создаем фабрику асинхронных сессий
-async_session = async_sessionmaker(engine, expire_on_commit=False)
+async_session = async_sessionmaker(_active_engine, expire_on_commit=False)
+
+
+def configure_db(database_url: Optional[str] = None, echo: Optional[bool] = None) -> None:
+    """
+    Динамически переконфигурирует движок и фабрику сессий SQLAlchemy.
+    Вызывается автоматически при создании RsgiWsrpcApp(database_url=...) или configure().
+    """
+    global DATABASE_URL, _active_engine, async_session
+    if database_url:
+        DATABASE_URL = _normalize_database_url(database_url)
+        os.environ["DATABASE_URL"] = DATABASE_URL
+    current_echo = echo if echo is not None else _db_echo
+    _active_engine = _build_engine(DATABASE_URL, current_echo)
+    async_session.configure(bind=_active_engine)
 
 
 def apply_pagination(stmt: Select, args: Dict[str, Any]) -> Select:

@@ -36,45 +36,28 @@ PUBLIC_DIR = os.path.join(SHOWCASE_DIR, "public")
 DB_PATH = os.path.join(SHOWCASE_DIR, "showcase.db")
 
 # Create RsgiWsrpcApp application instance (SQLite + Zero-Copy Granian Static)
+# dev_admin=True: автоматический роут /dev-admin для быстрого перехода в панель CRUD
+# auto_auth_ws=True (по умолчанию): сокеты автоматически авторизуются по Cookie
+# auto_auth_models=True (по умолчанию): User, Role, RpcPermission регистрируются в CRUD автоматически
 app = RsgiWsrpcApp(
     secret_key=os.getenv("SECRET_KEY", "showcase-demo-secret-key-1234567890-secure-seed"),
     database_url=os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DB_PATH}"),
     login_rpc="",  # Public access for interactive showcase
     static_dir=PUBLIC_DIR,
     index_file="index.html",
+    dev_admin=True,
     cors=True
 )
 
-# Model imports & CRUD Registry registration
+# Регистрация бизнес-моделей в CRUD
 from models import Task, Document
-from rsgi_wsrpc.plugins.auth import User, Role
+ModelRegistry.register(Task)
+ModelRegistry.register(Document)
 
-# Регистрация сущностей управления в меню CRUD (только Пользователи и Роли)
-ModelRegistry.register(User)
-ModelRegistry.register(Role)
-
-# Register showcase RPC handlers and plugins
-import handlers
-from handlers import DEMO_TOKENS, DemoSessionData, authenticate_credentials
+# Регистрация RPC-хендлеров и плагинов
+import handlers  # noqa: F401
 import rsgi_wsrpc.plugins.files  # Registers HTTP /upload and RPC files.*
-import rsgi_wsrpc.plugins.crud as crud
-
-# Бесшовный SSO: CRUD валидирует сессии через учетные данные showcase
-# Отдельная форма /crud/login отключена (Zero-Leakage: для всех не-админов отдается 404)
-crud.set_crud_session_validator(lambda t: DEMO_TOKENS.get(t))
-
-# Авторизация сокетов по Cookie при подключении
-@app.on_connect
-async def on_socket_connect(session):
-    token = session.cookies.get("rsgi_crud_session") or session.cookies.get("rsgi_session")
-    if token and token in DEMO_TOKENS:
-        user_info = DEMO_TOKENS[token]
-        session.data = DemoSessionData(
-            username=user_info["username"],
-            role=user_info["role"],
-            session_id=session.session_id
-        )
-        logger.info(f"[Showcase Auth] Сокет #{session.session_id} авторизован по Cookie как {user_info['role']} ({user_info['username']})")
+import rsgi_wsrpc.plugins.crud as crud  # noqa: F401
 
 # Initialize logging
 setup_logging()
@@ -83,7 +66,7 @@ setup_logging()
 @app.on_startup
 async def init_database():
     """Asynchronously creates SQLite database tables and seeds demo data on server startup."""
-    from rsgi_wsrpc.plugins.auth import system_bypass_ctx
+    from rsgi_wsrpc.plugins.auth import system_bypass_ctx, User, Role
     token = system_bypass_ctx.set(True)
     try:
         async with engine.begin() as conn:

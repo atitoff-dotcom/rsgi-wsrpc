@@ -250,10 +250,12 @@ class JsonRpcSession:
                 logger.debug(f"[Сессия {self.session_id}] Получено сообщение")
 
                 # --- ПРОВЕРКА НА ДИСКОННЕКТ ПО ТИПУ ОБЪЕКТА ---
-                if not msg or "CloseMessage" in type(msg).__name__:
+                cls_name = getattr(getattr(msg, "__class__", None), "__name__", "") or type(msg).__name__
+                if not msg or "CloseMessage" in cls_name or "CloseMessage" in type(msg).__name__:
                     logger.info(f"disconnect: session_id {self.session_id}")
                     break 
                 # ---------------------------------------------
+
                     
                 self._is_alive = True              
 

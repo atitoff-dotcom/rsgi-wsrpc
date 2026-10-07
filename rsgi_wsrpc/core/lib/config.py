@@ -183,6 +183,14 @@ def configure(
 
     if database_url is not None:
         updates["database_url"] = database_url
+        os.environ["DATABASE_URL"] = database_url
+        try:
+            import sys
+            if "rsgi_wsrpc.plugins.db" in sys.modules or "rsgi_wsrpc.plugins.db.session" in sys.modules:
+                from rsgi_wsrpc.plugins.db.session import configure_db
+                configure_db(database_url, echo=kwargs.get("db_echo"))
+        except Exception as e:
+            logger.debug(f"[CONFIG] Авто-настройка БД: {e}")
     if files_path is not None:
         updates["files_path"] = files_path
 
