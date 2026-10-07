@@ -24,7 +24,7 @@ TARGETS = {
     "local": TargetConfig(
         name="local",
         http_url=os.getenv("TEST_LOCAL_HTTP", "http://127.0.0.1:8080"),
-        ws_url=os.getenv("TEST_LOCAL_WS", "ws://127.0.0.1:8080/"),
+        ws_url=os.getenv("TEST_LOCAL_WS", "ws://127.0.0.1:8080/ws"),
         upload_url=os.getenv("TEST_LOCAL_UPLOAD", "http://127.0.0.1:8080/upload"),
     ),
 }

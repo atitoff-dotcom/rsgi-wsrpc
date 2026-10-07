@@ -77,7 +77,8 @@ async def run_benchmark(
     total_requests: int,
     timeout: float,
 ):
-    ws_url = target.rstrip("/").replace("http://", "ws://").replace("https://", "wss://") + "/"
+    ws_base = target.rstrip("/").replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = ws_base if ws_base.endswith("/ws") else f"{ws_base}/ws"
     req_per_worker = total_requests // concurrency
     actual_total = req_per_worker * concurrency
 

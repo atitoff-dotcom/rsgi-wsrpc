@@ -32,34 +32,30 @@ interface PendingRequest {
 }
 
 /**
- * Определение адреса WebSocket для подключения
+ * Определение адреса WebSocket для подключения (системный стандарт /ws)
  */
 export function getWsUrl(): string {
     if (typeof window !== 'undefined') {
+        if ((window as any).__WSRPC_URL__) {
+            return (window as any).__WSRPC_URL__;
+        }
         const isHttps = window.location.protocol === 'https:';
         const wsProto = isHttps ? 'wss:' : 'ws:';
         
         // Локальная разработка через Vite dev-сервер (5173/4173): бэкенд Granian на порту 8080
         if (['5173', '4173'].includes(window.location.port)) {
             const host = window.location.hostname || '127.0.0.1';
-            const url = `ws://${host}:8080/`;
+            const url = `ws://${host}:8080/ws`;
             console.info(`[WSRPC getWsUrl] Vite dev server detected -> ${url}`);
             return url;
         }
         
-        // На удаленном HTTPS сервере проксируем через Nginx /ws
-        if (isHttps) {
-            const url = `wss://${window.location.host}/ws`;
-            console.info(`[WSRPC getWsUrl] HTTPS production detected -> ${url}`);
-            return url;
-        }
-        
-        // Прямое подключение к серверу Granian (по localhost, IP или домену на HTTP)
-        const url = `${wsProto}//${window.location.host}/`;
-        console.info(`[WSRPC getWsUrl] Direct connection -> ${url}`);
+        // Системный стандарт /ws: единообразно для HTTP, HTTPS и Nginx
+        const url = `${wsProto}//${window.location.host}/ws`;
+        console.info(`[WSRPC getWsUrl] Connection -> ${url}`);
         return url;
     }
-    return 'ws://127.0.0.1:8080/';
+    return 'ws://127.0.0.1:8080/ws';
 }
 
 /**

@@ -12,19 +12,13 @@
 ---
 
 ## ✅ Выполнено в текущем релизе / подготовке:
-* [x] **Надежность, тестирование и безопасность (Industrial Hardening & Benchmarks):**
-  - **Автономный инструмент аудита безопасности ([scripts/security_audit.py](file:///home/alex/rsgi-wsrpc/scripts/security_audit.py)):**
-    - Автоматическая проверка 9 ключевых векторов атак (Zero-Leakage 404, CSWSH, 12MB DoS bomb, JSON-RPC 2.0 Compliance, Prototype Pollution, RBAC Privilege Isolation, CRUD RLS, JWT Forgery `alg:none`).
-    - Умный фоллбэк портов (автоматический переход с 8080 на 8000 при занятом порте) и защита от зависания отдельных зондов.
-  - **Высокопроизводительный стресс-бенчмарк ([scripts/benchmark.py](file:///home/alex/rsgi-wsrpc/scripts/benchmark.py)):**
-    - Замер пропускной способности (>11,000 RPS) и субмиллисекундных перцентилей задержки (p50: 0.9–1.6 ms).
-    - Динамический живой индикатор прогресса в реальном времени (`[████░░░] 65% | 2,400 RPS`).
-    - Учет и документирование встроенного в сессию Token-Bucket Rate Limiter (30 req/sec на сокет).
-  - **Белая книга надежности и документация ([SECURITY_AND_PERFORMANCE.md](file:///home/alex/rsgi-wsrpc/SECURITY_AND_PERFORMANCE.md), [docs/testing.md](file:///home/alex/rsgi-wsrpc/docs/testing.md)):**
-    - Подробное руководство по проведению нагрузочных тестов и аудита безопасности.
-    - Сравнительная таблица производительности `rsgi-wsrpc` против классических Django (WSGI/ASGI) и FastAPI (REST).
-  - **Исправление сидирования витрины ([examples/showcase/server.py](file:///home/alex/rsgi-wsrpc/examples/showcase/server.py)):**
-    - Нативный импорт `User, Role` в хуке `init_database`.
+* [x] **v0.5.3: Единый системный стандарт эндпоинта WebSocket (`/ws`):**
+  - **Канонический WebSocket эндпоинт (`/ws`):**
+    - В [client/wsrpc.ts](file:///home/alex/rsgi-wsrpc/client/wsrpc.ts) унифицирована функция `getWsUrl()`: теперь соединение всегда направляется на `/ws` единообразно во всех окружениях (HTTP, HTTPS, Vite dev-сервер, Nginx reverse proxy).
+    - Устранена рассинхронизация с Nginx: ранее при открытии админки по HTTP запрос уходил на `ws://host/` вместо `ws://host/ws`, что приводило к ошибке при наличии директивы `location /ws`.
+    - Добавлен механизм явного переопределения URL сокета через `window.__WSRPC_URL__`.
+    - Пересобраны автономная панель управления ([rsgi_wsrpc/plugins/crud/static](file:///home/alex/rsgi-wsrpc/rsgi_wsrpc/plugins/crud/static)) и интерактивная витрина ([examples/showcase/public](file:///home/alex/rsgi-wsrpc/examples/showcase/public)).
+    - Скрипты нагрузочного тестирования и аудита безопасности ([scripts/benchmark.py](file:///home/alex/rsgi-wsrpc/scripts/benchmark.py), [scripts/security_audit.py](file:///home/alex/rsgi-wsrpc/scripts/security_audit.py)) и тестовый конфиг ([tests/framework/config.py](file:///home/alex/rsgi-wsrpc/tests/framework/config.py)) обновлены для использования пути `/ws`.
 
 ## ✅ Выполнено в предыдущих релизах
 * [x] **v0.5.2:**

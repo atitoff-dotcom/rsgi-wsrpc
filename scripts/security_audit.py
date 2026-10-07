@@ -38,7 +38,8 @@ class SecurityCheckResult:
 class SecurityAuditor:
     def __init__(self, target: str, timeout: float = 3.0):
         self.target = target.rstrip("/")
-        self.ws_target = self.target.replace("http://", "ws://").replace("https://", "wss://") + "/"
+        ws_base = self.target.replace("http://", "ws://").replace("https://", "wss://")
+        self.ws_target = ws_base if ws_base.endswith("/ws") else f"{ws_base}/ws"
         self.timeout = timeout
         self.results: List[SecurityCheckResult] = []
 
