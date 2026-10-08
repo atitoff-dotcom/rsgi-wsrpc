@@ -66,57 +66,23 @@ class Settings:
 
 def _build_default_settings() -> dict:
     """
-    Формирует словарь дефолтных настроек ядра с чтением переменных окружения.
+    Формирует словарь дефолтных настроек ядра rsgi-wsrpc (Code-First).
+    Все настройки задаются в коде приложения (RsgiWsrpcApp / configure).
     """
-    idle_timeout_raw = os.getenv("SESSION_IDLE_TIMEOUT", "900")
-    try:
-        session_idle_timeout = int(idle_timeout_raw)
-    except ValueError:
-        session_idle_timeout = 900
-
-    pwd_iter_raw = os.getenv("PASSWORD_ITERATIONS", "600000")
-    try:
-        password_iterations = int(pwd_iter_raw)
-    except ValueError:
-        password_iterations = 600000
-
-    token_expire_raw = os.getenv("TOKEN_EXPIRE_HOURS", "24")
-    try:
-        token_expire_hours = int(token_expire_raw)
-    except ValueError:
-        token_expire_hours = 24
-
-    try:
-        auth_timeout = int(os.getenv("AUTH_TIMEOUT", "0"))
-    except ValueError:
-        auth_timeout = 0
-
-    try:
-        guest_idle_timeout = int(os.getenv("GUEST_IDLE_TIMEOUT", "900"))
-    except ValueError:
-        guest_idle_timeout = 900
-
-    try:
-        user_idle_timeout = int(os.getenv("USER_IDLE_TIMEOUT", "1800"))
-    except ValueError:
-        user_idle_timeout = 1800
-
-    allow_guests = os.getenv("ALLOW_GUESTS", "true").lower() in ("true", "1", "yes")
-
     return {
         "security": {
-            "secret_key": os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-in-production"),
-            "auth_timeout": auth_timeout,
-            "guest_idle_timeout": guest_idle_timeout,
-            "user_idle_timeout": user_idle_timeout,
-            "session_idle_timeout": session_idle_timeout,
-            "allow_guests": allow_guests,
-            "password_iterations": password_iterations,
-            "token_expire_hours": token_expire_hours,
-            "login_rpc": os.getenv("LOGIN_RPC", "login."),
+            "secret_key": "dev-insecure-secret-key-change-in-production",
+            "auth_timeout": 0,
+            "guest_idle_timeout": 900,
+            "user_idle_timeout": 1800,
+            "session_idle_timeout": 900,
+            "allow_guests": True,
+            "password_iterations": 600000,
+            "token_expire_hours": 24,
+            "login_rpc": "login.",
         },
-        "database_url": os.getenv("DATABASE_URL", "sqlite:///./data/app.db"),
-        "files_path": os.getenv("FILES_PATH", "./files"),
+        "database_url": "sqlite+aiosqlite:///app.db",
+        "files_path": "./files",
     }
 
 
@@ -183,7 +149,6 @@ def configure(
 
     if database_url is not None:
         updates["database_url"] = database_url
-        os.environ["DATABASE_URL"] = database_url
         try:
             import sys
             if "rsgi_wsrpc.plugins.db" in sys.modules or "rsgi_wsrpc.plugins.db.session" in sys.modules:

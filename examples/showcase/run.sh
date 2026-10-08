@@ -46,7 +46,7 @@ source "$VENV_DIR/bin/activate"
 # Install dependencies from PyPI
 echo "📦 Checking and installing dependencies from PyPI..."
 python -m pip install --quiet --upgrade pip
-python -m pip install -r "$SCRIPT_DIR/requirements.txt"
+python -m pip install --upgrade -r "$SCRIPT_DIR/requirements.txt"
 
 echo "============================================================"
 echo " 🌐 Server is starting..."

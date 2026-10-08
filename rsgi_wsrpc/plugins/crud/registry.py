@@ -14,7 +14,6 @@ DEFAULT_SYSTEM_BLACKLIST: Set[str] = {
     "RefreshToken",
     "ActiveSession",
     "OAuthAccount",
-    "PrefixBankEvent",
 }
 
 

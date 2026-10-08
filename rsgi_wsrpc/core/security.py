@@ -18,12 +18,12 @@ def get_secret_key() -> str:
     except Exception:
         pass
     if not key:
-        key = os.getenv("SECRET_KEY", "dev-insecure-secret-key-change-in-production")
+        key = "dev-insecure-secret-key-change-in-production"
     if key == "dev-insecure-secret-key-change-in-production":
         if not getattr(get_secret_key, "_warned", False):
             logger.warning(
                 "[SECURITY] Внимание: используется небезопасный dev secret_key по умолчанию! "
-                "Задайте secret_key в коде через configure(secret_key=...) или через переменную окружения SECRET_KEY!"
+                "Задайте secret_key в коде через RsgiWsrpcApp(secret_key=...) или configure(secret_key=...)!"
             )
             get_secret_key._warned = True
     return key

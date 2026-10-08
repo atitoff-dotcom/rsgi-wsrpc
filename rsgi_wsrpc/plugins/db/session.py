@@ -15,17 +15,16 @@ from sqlalchemy.orm import DeclarativeBase
 class Base(DeclarativeBase):
     pass
 
-# Определение URL подключения: env переменная или настройки ядра rsgi-wsrpc
-_db_url = os.environ.get("DATABASE_URL")
-if not _db_url:
-    try:
-        from rsgi_wsrpc.core.lib.config import settings as core_settings
-        _db_url = getattr(core_settings, "database_url", None)
-    except Exception:
-        pass
+# Определение URL подключения: настройки ядра rsgi-wsrpc (Code-First) или дефолт
+_db_url = None
+try:
+    from rsgi_wsrpc.core.lib.config import settings as core_settings
+    _db_url = getattr(core_settings, "database_url", None)
+except Exception:
+    pass
 
 if not _db_url:
-    _db_url = "sqlite:///./data/app.db"
+    _db_url = "sqlite+aiosqlite:///app.db"
 
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
@@ -65,10 +64,10 @@ def _build_engine(raw_url: str, echo: bool = False):
     }
     if "postgresql" in norm_url:
         engine_kwargs.update({
-            "pool_size": int(os.environ.get("DB_POOL_SIZE", "5")),
-            "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "3")),
-            "pool_timeout": int(os.environ.get("DB_POOL_TIMEOUT", "30")),
-            "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", "1800")),
+            "pool_size": 5,
+            "max_overflow": 3,
+            "pool_timeout": 30,
+            "pool_recycle": 1800,
             "pool_pre_ping": True,
         })
     eng = create_async_engine(norm_url, **engine_kwargs)
@@ -111,7 +110,6 @@ def configure_db(database_url: Optional[str] = None, echo: Optional[bool] = None
     global DATABASE_URL, _active_engine, async_session
     if database_url:
         DATABASE_URL = _normalize_database_url(database_url)
-        os.environ["DATABASE_URL"] = DATABASE_URL
     current_echo = echo if echo is not None else _db_echo
     _active_engine = _build_engine(DATABASE_URL, current_echo)
     async_session.configure(bind=_active_engine)

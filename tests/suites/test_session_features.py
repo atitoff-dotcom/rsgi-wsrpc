@@ -163,7 +163,7 @@ async def test_guest_vs_user_idle_and_auth_timeout():
     # 2. Config with auth_timeout > 0 kicks unauthenticated
     configure(auth_timeout=0.01)
     session2 = JsonRpcSession(ws, session_id=102)
-    dummy_task = asyncio.create_task(asyncio.sleep(10))
+    dummy_task = asyncio.create_task(asyncio.sleep(0.2))
     session2._main_task = dummy_task
     
     # Should kick unauthenticated session after timeout

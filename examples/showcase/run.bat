@@ -58,7 +58,7 @@ call .venv\Scripts\activate.bat
 :: Install dependencies from PyPI
 echo [*] Checking and installing dependencies from PyPI...
 python -m pip install --quiet --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --upgrade -r requirements.txt
 
 echo ============================================================
 echo  Server is starting...

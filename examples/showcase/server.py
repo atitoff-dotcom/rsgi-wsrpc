@@ -36,16 +36,14 @@ PUBLIC_DIR = os.path.join(SHOWCASE_DIR, "public")
 DB_PATH = os.path.join(SHOWCASE_DIR, "showcase.db")
 
 # Create RsgiWsrpcApp application instance (SQLite + Zero-Copy Granian Static)
-# dev_admin=True: автоматический роут /dev-admin для быстрого перехода в панель CRUD
 # auto_auth_ws=True (по умолчанию): сокеты автоматически авторизуются по Cookie
 # auto_auth_models=True (по умолчанию): User, Role, RpcPermission регистрируются в CRUD автоматически
 app = RsgiWsrpcApp(
-    secret_key=os.getenv("SECRET_KEY", "showcase-demo-secret-key-1234567890-secure-seed"),
-    database_url=os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DB_PATH}"),
+    secret_key="showcase-demo-secret-key-1234567890-secure-seed",
+    database_url=f"sqlite+aiosqlite:///{DB_PATH}",
     login_rpc="",  # Public access for interactive showcase
     static_dir=PUBLIC_DIR,
     index_file="index.html",
-    dev_admin=True,
     cors=True
 )
 
@@ -121,9 +119,9 @@ async def init_database():
 
             count_users = (await db.execute(select(func.count(User.id)))).scalar_one()
             if count_users == 0:
-                user_admin = User(login="admin", name="Administrator", first_name="Admin", last_name="System", email="admin@example.com")
-                user_alice = User(login="alice", name="Alice Wonderland", first_name="Alice", last_name="Wonderland", email="alice@example.com")
-                user_bob = User(login="bob", name="Bob Builder", first_name="Bob", last_name="Builder", email="bob@example.com")
+                user_admin = User(login="admin", name="Administrator", first_name="Admin", last_name="System", email="admin@example.com", password_hash=User._hash_password("admin123"))
+                user_alice = User(login="alice", name="Alice Wonderland", first_name="Alice", last_name="Wonderland", email="alice@example.com", password_hash=User._hash_password("user123"))
+                user_bob = User(login="bob", name="Bob Builder", first_name="Bob", last_name="Builder", email="bob@example.com", password_hash=User._hash_password("bob123"))
                 db.add_all([user_admin, user_alice, user_bob])
                 await db.flush()
 
@@ -197,12 +195,15 @@ def get_local_ip() -> str:
 
 
 if __name__ == "__main__":
+    if app.handle_cli():
+        sys.exit(0)
+
     import argparse
     from granian import Granian
 
     parser = argparse.ArgumentParser(description="rsgi-wsrpc Showcase Server")
-    parser.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"), help="Host to bind (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8080")), help="Port to bind (default: 8080)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8333, help="Port to bind (default: 8333)")
     args, _ = parser.parse_known_args()
 
     host = args.host

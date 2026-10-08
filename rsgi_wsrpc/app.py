@@ -57,7 +57,6 @@ class RsgiWsrpcApp:
         backplane_url: Optional[str] = None,
         enable_seo: bool = False,
         sitemap_host: Optional[str] = None,
-        dev_admin: bool = False,
         auto_auth_ws: bool = True,
         auto_auth_models: bool = True,
         custom_settings: Optional[Dict[str, Any]] = None,
@@ -139,7 +138,6 @@ class RsgiWsrpcApp:
         self._session_counter = count()
         self._on_connect_callbacks: List[Callable] = []
 
-        self.dev_admin = dev_admin
         self.auto_auth_ws = auto_auth_ws
 
         # Автоматическая регистрация стандартных моделей в CRUD
@@ -150,59 +148,78 @@ class RsgiWsrpcApp:
             except Exception:
                 pass
 
-        if self.dev_admin:
-            self._register_dev_admin()
-
         # Граниан связывает __rsgi_init__ и __rsgi_del__ на самом объекте приложения
         self.__rsgi_init__ = self._rsgi_init_handler
         self.__rsgi_del__ = self._rsgi_del_handler
 
-    def _register_dev_admin(self) -> None:
-        """Регистрирует роут /dev-admin и начальный сидинг админа для локальной разработки."""
-        @self.route("/dev-admin", methods=["GET"])
-        async def _dev_admin_route(scope, proto):
-            from rsgi_wsrpc.plugins.crud import create_crud_session
-            token = create_crud_session({"username": "admin", "role": "admin"})
-            proto.response_str(
-                status=302,
-                headers=[
-                    ("location", "/admin/"),
-                    ("set-cookie", f"rsgi_crud_session={token}; path=/; max-age=86400; SameSite=Lax"),
-                    ("content-length", "0"),
-                ],
-                body=""
-            )
+    async def set_admin_password(self, login: str = "admin", password: Optional[str] = None) -> str:
+        """
+        Устанавливает или генерирует новый пароль для указанного пользователя в БД.
+        Строго DML (не создает таблицы или схему БД во избежание версионных проблем).
+        """
+        import secrets
+        import string
+        from sqlalchemy import select
+        from rsgi_wsrpc.plugins.db import async_session
+        from rsgi_wsrpc.plugins.auth import User, system_bypass_ctx
 
-        async def _seed_dev_admin():
-            try:
-                from rsgi_wsrpc.plugins.db import async_session
-                from rsgi_wsrpc.plugins.auth import User, Role, system_bypass_ctx
-                from sqlalchemy import select
-                token = system_bypass_ctx.set(True)
+        if not password:
+            chars = string.ascii_letters + string.digits + "!@#$%^&*"
+            password = "".join(secrets.choice(chars) for _ in range(16))
+
+        token = system_bypass_ctx.set(True)
+        try:
+            async with async_session() as db:
+                user = (await db.execute(select(User).where(User.login == login))).scalar_one_or_none()
+                if not user:
+                    raise ValueError(
+                        f"Пользователь с логином '{login}' не найден в базе данных. "
+                        f"Схема данных и пользователи должны быть предварительно инициализированы приложением."
+                    )
+                user.password_hash = User._hash_password(password)
+                await db.commit()
+                return password
+        finally:
+            system_bypass_ctx.reset(token)
+
+    def handle_cli(self, argv: Optional[List[str]] = None) -> bool:
+        """
+        Обрабатывает служебные CLI-флаги, такие как --set-admin-password.
+        Возвращает True, если была выполнена служебная команда (сервер запускать не нужно).
+        """
+        import sys
+        args = argv if argv is not None else sys.argv[1:]
+        if not args:
+            return False
+
+        for i, arg in enumerate(args):
+            if arg in ("--set-admin-password", "--set-password"):
+                custom_password = None
+                if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                    custom_password = args[i + 1]
+
+                login = "admin"
+                for j, a in enumerate(args):
+                    if a == "--login" and j + 1 < len(args):
+                        login = args[j + 1]
+
+                db_url = self.settings.get("database_url", "sqlite+aiosqlite:///app.db")
                 try:
-                    async with async_session() as db:
-                        admin_user = (await db.execute(select(User).where(User.login == "admin"))).scalar_one_or_none()
-                        if not admin_user:
-                            admin_role = (await db.execute(select(Role).where(Role.name == "admin"))).scalar_one_or_none()
-                            if not admin_role:
-                                admin_role = Role(name="admin", description="Системный администратор (Superadmin)")
-                                db.add(admin_role)
-                                await db.flush()
-                            user = User(
-                                login="admin",
-                                name="Администратор (Dev)",
-                                password_hash=User._hash_password("admin123")
-                            )
-                            user.roles.append(admin_role)
-                            db.add(user)
-                            await db.commit()
-                            logger.info("[DevAdmin] Создан суперпользователь 'admin' (пароль: admin123)")
-                finally:
-                    system_bypass_ctx.reset(token)
-            except Exception as e:
-                logger.debug(f"[DevAdmin] Пропущен сидинг dev admin: {e}")
-
-        self.on_startup(_seed_dev_admin)
+                    new_pwd = asyncio.run(self.set_admin_password(login=login, password=custom_password))
+                    print("=" * 64)
+                    print(" 🛡️  rsgi-wsrpc: Пароль успешно обновлен в базе данных!")
+                    print(f" 🗄️  База данных: {db_url}")
+                    print(f" 👤 Логин:       {login}")
+                    print(f" 🔑 Пароль:      {new_pwd}")
+                    print("=" * 64)
+                    print(" 👉 Войдите через форму авторизации вашего приложения.")
+                    return True
+                except Exception as e:
+                    print("=" * 64, file=sys.stderr)
+                    print(f" ❌ Ошибка смены пароля: {e}", file=sys.stderr)
+                    print("=" * 64, file=sys.stderr)
+                    sys.exit(1)
+        return False
 
     def _auto_authenticate_ws(self, session: JsonRpcSession) -> None:
         """Автоматически авторизует WebSocket по Cookie (rsgi_crud_session, rsgi_session, rpc_jwt)."""
@@ -490,6 +507,8 @@ class RsgiWsrpcApp:
         """
         Удобный запуск сервера через Granian в коде.
         """
+        if self.handle_cli():
+            return
         if workers > 1:
             from .core.backplane import get_backplane, MemoryBackplane
             if isinstance(get_backplane(), MemoryBackplane):

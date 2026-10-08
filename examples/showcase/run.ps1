@@ -48,7 +48,7 @@ $venvPython = Join-Path $venvPath "Scripts\python.exe"
 # Install dependencies from PyPI
 Write-Host "📦 Checking and installing dependencies from PyPI..." -ForegroundColor Yellow
 & $venvPython -m pip install --quiet --upgrade pip
-& $venvPython -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
+& $venvPython -m pip install --upgrade -r (Join-Path $PSScriptRoot "requirements.txt")
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host " 🌐 Server is starting..." -ForegroundColor Green

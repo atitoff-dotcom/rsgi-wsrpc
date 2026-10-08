@@ -79,19 +79,19 @@ class Task(Base):
 
 ---
 
-#### Вариант А: Самый простой способ для разработки и тестов (`dev_admin=True`)
+#### Вариант А: Управление паролем администратора через CLI (`--set-admin-password`)
 
-Включите флаг `dev_admin=True` при создании `RsgiWsrpcApp`:
+Для безопасной смены или установки пароля администратора используйте встроенный CLI:
 
-```python
-app = RsgiWsrpcApp(
-    secret_key="dev-secret-key",
-    database_url="sqlite+aiosqlite:///app.db",
-    dev_admin=True,  # Автоматически регистрирует /dev-admin и сидирует admin/admin123
-)
+```bash
+# Интерактивный ввод пароля с подтверждением:
+python server.py --set-admin-password
+
+# Или прямая передача пароля (например, в CI/CD):
+python server.py --set-admin-password "my_strong_pass" --login admin
 ```
 
-👉 **Как открыть:** Перейдите в браузере по адресу `http://localhost:8080/dev-admin` — сервер мгновенно выдаст куку сессии и перенаправит вас в `/crud/`! Никаких 404 и ни одной строчки лишнего кода.
+Утилита работает строго на уровне DML (обновляет `password_hash` в БД по алгоритму PBKDF2-SHA256) без опасных бэкдоров и без DDL-мутаций. После смены пароля войдите через стандартную форму логина приложения.
 
 ---
 
@@ -180,7 +180,6 @@ crud.ModelRegistry.register(Task)
 # 3. Инициализируем приложение rsgi-wsrpc
 app = RsgiWsrpcApp(
     database_url="sqlite+aiosqlite:///dev.db",
-    dev_admin=True,  # Включает роут /dev-admin и сидирует admin/admin123
     cors=True
 )
 
@@ -194,11 +193,10 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080)
 ```
 
-**Запуск:**
+**Установка пароля администратора:**
 ```bash
-python minimal_admin.py
+python minimal_admin.py --set-admin-password
 ```
-Откройте в браузере: `http://127.0.0.1:8080/dev-admin` — и панель готова к работе!
 
 ---
 
@@ -220,7 +218,7 @@ python minimal_admin.py
 
 | Проблема / Симптом | Причина | Решение |
 | :--- | :--- | :--- |
-| **`404 Not Found`** при переходе на `/crud` | Защита Zero-Leakage: нет Cookie администратора `rsgi_crud_session` | Перейдите через роут входа (`/dev-admin`) или установите Cookie с токеном администратора. |
+| **`404 Not Found`** при переходе на `/crud` | Защита Zero-Leakage: нет Cookie администратора `rsgi_crud_session` | Авторизуйтесь под администратором в приложении или установите Cookie с токеном администратора. |
 | **`404 Not Found`** даже при наличии куки | Модуль `rsgi_wsrpc.plugins.crud` не был импортирован в Python | Добавьте `import rsgi_wsrpc.plugins.crud as crud` в основной файл запуска. |
 | **Пустой экран** в панели (нет таблиц) | Модели SQLAlchemy не зарегистрированы в `ModelRegistry` | Вызовите `crud.ModelRegistry.auto_discover(Base)` или `crud.ModelRegistry.register(MyModel)`. |
 | **Ошибка валидации** при редактировании ячейки | Введено значение, не соответствующее типу колонки | Плагин использует `coerce_value`. Убедитесь, что числа, булевы флаги и даты вводятся в корректном формате. |

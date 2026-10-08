@@ -33,15 +33,18 @@ async def test_async_engine_proxy_and_rebind():
     assert hasattr(engine, "connect")
     assert hasattr(engine, "sync_engine")
     
-    # 2. Переконфигурируем движок
-    configure_db("sqlite+aiosqlite:///:memory:")
-    assert "memory" in str(engine.url) or "sqlite" in str(engine.url)
-    
-    # 3. Фабрика сессий успешно привязана к новому движку
-    from sqlalchemy import text
-    async with async_session() as db:
-        res = await db.execute(text("SELECT 42"))
-        assert res.scalar() == 42
+    try:
+        # 2. Переконфигурируем движок
+        configure_db("sqlite+aiosqlite:///:memory:")
+        assert "memory" in str(engine.url) or "sqlite" in str(engine.url)
+        
+        # 3. Фабрика сессий успешно привязана к новому движку
+        from sqlalchemy import text
+        async with async_session() as db:
+            res = await db.execute(text("SELECT 42"))
+            assert res.scalar() == 42
+    finally:
+        configure_db("sqlite+aiosqlite:///app.db")
 
 
 def test_crud_jwt_native_fallback():
@@ -100,23 +103,69 @@ async def test_auth_session_send_stream_chunk_alias():
 
 
 @pytest.mark.asyncio
-async def test_dev_admin_route():
-    """Проверяет автоматическую регистрацию роута /dev-admin при dev_admin=True."""
-    app = RsgiWsrpcApp(dev_admin=True)
-    
-    # Мок RSGI scope и proto
+async def test_set_admin_password_and_cli():
+    """Проверяет утилиту смены пароля администратора и отсутствие бэкдора /dev-admin."""
+    from rsgi_wsrpc.plugins.db import async_session, engine, Base
+    from rsgi_wsrpc.plugins.auth import User, Role, system_bypass_ctx
+    from sqlalchemy import select
+
+    # Инициализация тестовой БД
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    token = system_bypass_ctx.set(True)
+    try:
+        async with async_session() as db:
+            user = (await db.execute(select(User).where(User.login == "admin"))).scalar_one_or_none()
+            if not user:
+                user = User(login="admin", name="Admin", password_hash=User._hash_password("oldpass"))
+                db.add(user)
+                await db.commit()
+    finally:
+        system_bypass_ctx.reset(token)
+
+    app = RsgiWsrpcApp()
+
+    # 1. Проверяем, что роут /dev-admin больше не существует (возвращает 404)
     proto = MagicMock()
     scope = {"proto": "http", "method": "GET", "path": "/dev-admin", "headers": {}}
-    
     await app._handle_http(scope, proto)
-    
-    # Проверяем, что proto.response_str был вызван с кодом 302 и кукой
     assert proto.response_str.called
-    kwargs = proto.response_str.call_args.kwargs
-    assert kwargs["status"] == 302
-    headers_dict = dict(kwargs["headers"])
-    assert headers_dict["location"] in ("/admin/", "/crud/")
-    assert "rsgi_crud_session=" in headers_dict["set-cookie"]
+    assert proto.response_str.call_args.kwargs["status"] == 404
+
+    # 2. Проверяем программную смену пароля
+    pwd = await app.set_admin_password(login="admin", password="new_strong_password")
+    assert pwd == "new_strong_password"
+
+    t = system_bypass_ctx.set(True)
+    try:
+        async with async_session() as db:
+            user_check = (await db.execute(select(User).where(User.login == "admin"))).scalar_one()
+            assert user_check.verify_password("new_strong_password") is True
+            assert user_check.verify_password("oldpass") is False
+    finally:
+        system_bypass_ctx.reset(t)
+
+    # 3. Проверяем ошибку при попытке смены пароля несуществующего пользователя (без DDL создания)
+    with pytest.raises(ValueError) as exc_info:
+        await app.set_admin_password(login="unknown_ghost_user")
+    assert "не найден в базе данных" in str(exc_info.value)
+
+
+def test_handle_cli():
+    """Проверяет обработку CLI-флагов handle_cli."""
+    from unittest.mock import patch, AsyncMock
+    app = RsgiWsrpcApp()
+    # 1. Нецелевые флаги возвращают False
+    assert app.handle_cli(["--host", "0.0.0.0"]) is False
+    assert app.handle_cli([]) is False
+
+    # 2. Флаг --set-admin-password вызывает set_admin_password
+    with patch.object(app, "set_admin_password", new_callable=AsyncMock) as mock_set:
+        mock_set.return_value = "new_pass_123"
+        handled = app.handle_cli(["--set-admin-password", "my_pass", "--login", "admin"])
+        assert handled is True
+        mock_set.assert_called_once_with(login="admin", password="my_pass")
 
 
 
@@ -155,3 +204,4 @@ async def test_auto_auth_ws_on_connect():
     assert connected_session.data.user_role == "admin"
     assert connected_session.data.user_name == "boss"
     assert connected_session.data.has_rpc_permission("any.method") is True
+    await connected_session.close()

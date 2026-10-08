@@ -68,9 +68,37 @@ async def async_create_superuser(username: str, password: str, email: str = None
         system_bypass_ctx.reset(token)
 
 
+async def async_set_password(login: str = "admin", password: str = None) -> str:
+    """Обновляет пароль пользователя в существующей БД строго DML (без DDL во избежание версионных проблем)."""
+    import secrets
+    import string
+    token = system_bypass_ctx.set(True)
+    try:
+        if not password:
+            chars = string.ascii_letters + string.digits + "!@#$%^&*"
+            password = "".join(secrets.choice(chars) for _ in range(16))
+        async with async_session() as db:
+            stmt = select(User).where(User.login == login)
+            user = (await db.execute(stmt)).scalar_one_or_none()
+            if not user:
+                raise ValueError(
+                    f"Пользователь с логином '{login}' не найден в базе данных. "
+                    "Схема данных и пользователи должны быть предварительно инициализированы приложением."
+                )
+            user.password_hash = User._hash_password(password)
+            await db.commit()
+            return password
+    finally:
+        system_bypass_ctx.reset(token)
+
+
 def main():
     parser = argparse.ArgumentParser(description="rsgi-wsrpc CLI management tool")
     subparsers = parser.add_subparsers(dest="command", help="Команда для выполнения")
+
+    passwd_parser = subparsers.add_parser("set-admin-password", help="Установить или сгенерировать пароль администратора в существующей БД")
+    passwd_parser.add_argument("--login", "-l", type=str, default="admin", help="Логин пользователя (по умолчанию admin)")
+    passwd_parser.add_argument("--password", "-p", type=str, help="Новый пароль (если не указан, будет сгенерирован автоматически)")
 
     create_parser = subparsers.add_parser("createsuperuser", help="Создать администратора системы (admin)")
     create_parser.add_argument("--username", "-u", type=str, help="Имя пользователя (логин)")
@@ -81,7 +109,20 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "createsuperuser":
+    if args.command == "set-admin-password":
+        try:
+            pwd = asyncio.run(async_set_password(login=args.login, password=args.password))
+            print("=" * 64)
+            print(" 🛡️  rsgi-wsrpc: Пароль успешно обновлен в базе данных!")
+            print(f" 👤 Логин:       {args.login}")
+            print(f" 🔑 Пароль:      {pwd}")
+            print("=" * 64)
+            print(" 👉 Войдите через форму авторизации вашего приложения.")
+        except Exception as e:
+            print(f"❌ Ошибка смены пароля: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.command == "createsuperuser":
         username = args.username
         password = args.password
         email = args.email
