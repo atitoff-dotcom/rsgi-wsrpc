@@ -39,22 +39,10 @@ app = RsgiWsrpcApp(
     cors=True
 )
 
-# 4. Dev-helper route for instant admin access (bypassing Zero-Leakage 404 for local dev)
-@app.route("/dev-admin")
-async def dev_admin(scope, proto):
-    token = crud.create_crud_session({"username": "admin", "role": "admin"})
-    proto.response_str(
-        status=302,
-        headers=[
-            ("location", "/crud/"),
-            ("set-cookie", f"rsgi_crud_session={token}; path=/; max-age=86400; SameSite=Lax"),
-            ("content-length", "0"),
-        ],
-        body=""
-    )
-
+# 4. Handle CLI commands (such as --set-admin-password) or run server
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8080)
+    if not app.handle_cli():
+        app.run(host="127.0.0.1", port=8080)
 ```
 
 > **Important Security Note (Zero-Leakage 404):**  

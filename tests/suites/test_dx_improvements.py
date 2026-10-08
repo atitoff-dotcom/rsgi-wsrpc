@@ -4,7 +4,7 @@
 1. Динамический ре-бинд базы данных (AsyncEngineProxy, configure_db).
 2. Нативная бесшовная интеграция CRUD с JWT токенами фреймворка.
 3. Защита от циклической рекурсии в get_crud_session.
-4. Встроенный режим dev_admin=True.
+4. Исключение бэкдора /dev-admin и CLI --set-admin-password.
 5. Автоматическая авторизация сокетов auto_auth_ws.
 6. send_stream_chunk alias в AuthSession.
 """
