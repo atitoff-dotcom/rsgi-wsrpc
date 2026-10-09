@@ -32,23 +32,36 @@ class Settings:
     def __init__(self, data: dict):
         self._data = data
 
+    def __getstate__(self) -> dict:
+        return {"_data": self.__dict__.get("_data", {})}
+
+    def __setstate__(self, state: dict) -> None:
+        self._data = state.get("_data", {})
+
     def __getattr__(self, name: str) -> Any:
-        if name in self._data:
-            val = self._data[name]
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        data = self.__dict__.get("_data")
+        if data is None:
+            raise AttributeError(name)
+        if name in data:
+            val = data[name]
             if isinstance(val, dict):
                 return Settings(val)
             return val
         raise AttributeError(f"Настройка '{name}' не найдена в конфигурации")
 
     def get(self, name: str, default: Any = None) -> Any:
-        val = self._data.get(name, default)
+        data = self.__dict__.get("_data", {})
+        val = data.get(name, default)
         if isinstance(val, dict):
             return Settings(val)
         return val
 
     def __getitem__(self, name: str) -> Any:
-        if name in self._data:
-            val = self._data[name]
+        data = self.__dict__.get("_data", {})
+        if name in data:
+            val = data[name]
             if isinstance(val, dict):
                 return Settings(val)
             return val

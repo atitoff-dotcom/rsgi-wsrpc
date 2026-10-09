@@ -205,3 +205,15 @@ async def test_auto_auth_ws_on_connect():
     assert connected_session.data.user_name == "boss"
     assert connected_session.data.has_rpc_permission("any.method") is True
     await connected_session.close()
+
+
+def test_app_picklability():
+    """Проверяет, что RsgiWsrpcApp успешно сериализуется через pickle (для multiprocessing spawn в Python 3.14 / Granian)."""
+    import pickle
+    app = RsgiWsrpcApp()
+    id1 = next(app._session_counter)
+    serialized = pickle.dumps(app)
+    restored_app = pickle.loads(serialized)
+    id2 = next(restored_app._session_counter)
+    assert id2 == id1 + 1
+

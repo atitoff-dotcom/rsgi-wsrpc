@@ -10,7 +10,6 @@ import sys
 import asyncio
 import inspect
 import mimetypes
-from itertools import count
 from typing import Optional, List, Dict, Any, Union, Callable
 
 from .core.lib.config import configure, settings, Settings
@@ -18,6 +17,21 @@ from .core.session import JsonRpcSession, rpc_method, RPC_REGISTRY, ACTIVE_SESSI
 from .core.router import http_route, HTTP_ROUTES
 from .core.lifecycle import on_startup, on_shutdown, run_startup_callbacks, run_shutdown_callbacks
 from .core.logger import logger, setup_logging
+
+
+class _SessionCounter:
+    """Сериализуемый счетчик сессий (совместим с multiprocessing spawn / pickle в Python 3.14)."""
+
+    def __init__(self, start: int = 0):
+        self._val = start
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> int:
+        val = self._val
+        self._val += 1
+        return val
 
 
 class RsgiWsrpcApp:
@@ -135,7 +149,7 @@ class RsgiWsrpcApp:
                 self.index_file = os.path.abspath(index_file)
 
         self.enable_seo = enable_seo
-        self._session_counter = count()
+        self._session_counter = _SessionCounter()
         self._on_connect_callbacks: List[Callable] = []
 
         self.auto_auth_ws = auto_auth_ws

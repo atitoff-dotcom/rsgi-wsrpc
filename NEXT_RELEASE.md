@@ -12,6 +12,13 @@
 ---
 
 ## ✅ Выполнено в текущем релизе / подготовке:
+* [x] **v0.5.5: Совместимость с Python 3.14 и Granian multiprocessing spawn (Pickle-safe App):**
+  - **Устранение `TypeError: cannot pickle 'itertools.count'`:**
+    - Заменен несериализуемый C-объект `itertools.count()` на picklable класс `_SessionCounter` в `rsgi_wsrpc/app.py`.
+    - `RsgiWsrpcApp` теперь гарантированно и прозрачно сериализуется через `pickle` / `multiprocessing.reduction.ForkingPickler`, что обеспечивает полную совместимость со стандартной моделью `spawn` в Python 3.14, macOS, Windows и многопроцессным режимом Granian (`workers > 1` / `mp`).
+  - **Тесты:**
+    - Добавлен автоматический тест сериализуемости `test_app_picklability` в `tests/suites/test_dx_improvements.py`.
+
 * [x] **v0.5.4: Исключение бэкдоров, 100% Code-First конфигурация и CLI-управление администратором:**
   - **Безопасность: Полное удаление `/dev-admin` бэкдора:**
     - Полностью удален роут `/dev-admin` и аргумент `dev_admin` из ядра `RsgiWsrpcApp`. Исключены риски утечки авторизации через небезопасный контекст (HTTP) и сбоев многопроцессного режима.
